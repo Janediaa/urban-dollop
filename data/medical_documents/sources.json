@@ -1,0 +1,93 @@
+
+[
+  {
+    "filename": "who_asthma.html",
+    "title": "Asthma",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/asthma",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2026-04-28"
+  },
+  {
+    "filename": "who_cancer.html",
+    "title": "Cancer",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/cancer",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2025-02-03"
+  },
+  {
+    "filename": "who_cardiovascular_diseases.html",
+    "title": "Cardiovascular Diseases",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/cardiovascular-diseases",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2025-07-31"
+  },
+  {
+    "filename": "who_chronic_obstructive_pulmonary_disease.html",
+    "title": "Chronic Obstructive Pulmonary Disease",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/chronic-obstructive-pulmonary-disease-(copd)",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2024-11-06"
+  },
+  {
+    "filename": "who_depression.html",
+    "title": "Depression",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/depression",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2026-09-11"
+  },
+  {
+    "filename": "who_diabetes.html",
+    "title": "Diabetes",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/diabetes",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2024-11-14"
+  },
+  {
+    "filename": "who_hiv_aids.html",
+    "title": "HIV/AIDS",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/hiv-aids",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2026-04-28"
+  },
+  {
+    "filename": "who_hypertension.html",
+    "title": "Hypertension",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2025-09-25"
+  },
+  {
+    "filename": "who_stroke.html",
+    "title": "Stroke",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/stroke",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2026-01-21"
+  },
+  {
+    "filename": "who_tuberculosis.html",
+    "title": "Tuberculosis",
+    "source": "World Health Organization",
+    "url": "https://www.who.int/news-room/fact-sheets/detail/tuberculosis",
+    "accessed_date": "2026-10-26",
+    "document_type": "html",
+    "published_date": "2025-02-19"
+  }
+]
