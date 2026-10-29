@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date, timedelta
 
 import pytest
-from unittest.mock import patch
+
 from src.database.models import create_tables
 from src.services.appointment_service import (
     book_appointment,
@@ -165,38 +165,41 @@ def test_cancellation_marks_appointment_cancelled_and_releases_slot(
     assert slot_status == "available"
 
 
-def test_booking_fails_and_rolls_back_if_slot_update_affects_no_rows(
-    conn, future_slot
-):
-    with patch.object(conn, "execute", wraps=conn.execute) as execute_spy:
-        original_execute = conn.execute
 
-        def execute_with_failed_slot_update(sql, parameters=()):
-            if (
-                "UPDATE appointment_slots" in sql
-                and "SET status = 'booked'" in sql
-            ):
-                return original_execute(
-                    """
-                    UPDATE appointment_slots
-                    SET status = 'booked'
-                    WHERE slot_id = ? AND status = 'available'
-                    AND 1 = 0
-                    """,
-                    parameters,
-                )
+def test_booking_rolls_back_when_slot_update_fails(conn, future_slot):
+    booking_transaction = conn.execute
 
-            return original_execute(sql, parameters)
-
-        execute_spy.side_effect = execute_with_failed_slot_update
-
-        with pytest.raises(ValueError, match="not available"):
-            book_appointment(
-                conn,
-                future_slot["slot_id"],
-                "Test Patient",
-                "test@example.com",
+    def execute_with_failed_slot_update(sql, parameters=()):
+        if (
+            "UPDATE appointment_slots" in sql
+            and "SET status = 'booked'" in sql
+        ):
+            return booking_transaction(
+                """
+                UPDATE appointment_slots
+                SET status = 'booked'
+                WHERE slot_id = ? AND status = 'available'
+                AND 1 = 0
+                """,
+                parameters,
             )
+
+        return booking_transaction(sql, parameters)
+
+    class ConnectionProxy:
+        def execute(self, sql, parameters=()):
+            return execute_with_failed_slot_update(sql, parameters)
+
+        def __getattr__(self, name):
+            return getattr(conn, name)
+
+    with pytest.raises(ValueError, match="not available"):
+        book_appointment(
+            ConnectionProxy(),
+            future_slot["slot_id"],
+            "Test Patient",
+            "test@example.com",
+        )
 
     appointment_count = conn.execute(
         "SELECT COUNT(*) FROM appointments WHERE slot_id = ?",
