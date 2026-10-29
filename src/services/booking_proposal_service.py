@@ -14,6 +14,8 @@ def create_booking_proposal(
     slot_id: int,
     patient_name: str,
     patient_contact: str,
+        *,
+    user_id: int | None = None,
 ) -> dict:
     """Create a pending proposal without booking the appointment."""
 
@@ -63,9 +65,10 @@ def create_booking_proposal(
                 patient_name,
                 patient_contact,
                 status,
-                expires_at
+                expires_at,
+                user_id
             )
-            VALUES (?, ?, ?, ?, 'pending', ?)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 proposal_id,
@@ -73,7 +76,8 @@ def create_booking_proposal(
                 patient_name.strip(),
                 patient_contact.strip(),
                 expires_at.isoformat(),
-            ),
+                user_id,
+            )
         )
 
         conn.commit()
@@ -97,20 +101,24 @@ def create_booking_proposal(
         raise
 
 
+
 def get_booking_proposal(
     conn: sqlite3.Connection,
     proposal_id: str,
+    *,
+    user_id: int | None = None,
 ) -> dict | None:
-    """Retrieve a proposal by ID."""
+    """Retrieve a proposal, optionally restricted to its owner."""
 
     row = conn.execute(
         """
         SELECT proposal_id, slot_id, patient_name, patient_contact,
-               status, expires_at, booking_reference, created_at
+               status, expires_at, booking_reference, created_at, user_id
         FROM booking_proposals
         WHERE proposal_id = ?
+          AND (? IS NULL OR user_id = ?)
         """,
-        (proposal_id,),
+        (proposal_id, user_id, user_id),
     ).fetchone()
 
     if row is None:
@@ -125,12 +133,15 @@ def get_booking_proposal(
         "expires_at": row[5],
         "booking_reference": row[6],
         "created_at": row[7],
+        "user_id": row[8],
     }
 
 
 def confirm_booking_proposal(
     conn: sqlite3.Connection,
     proposal_id: str,
+        *,
+    user_id: int | None = None,
 ) -> dict:
     """Confirm a pending proposal and book its slot atomically."""
 
@@ -145,17 +156,18 @@ def confirm_booking_proposal(
         proposal = conn.execute(
             """
             SELECT slot_id, patient_name, patient_contact,
-                   status, expires_at
+                status, expires_at, user_id
             FROM booking_proposals
             WHERE proposal_id = ?
+            AND (? IS NULL OR user_id = ?)
             """,
-            (proposal_id,),
+            (proposal_id, user_id, user_id),
         ).fetchone()
 
         if proposal is None:
             raise ValueError("Booking proposal not found")
 
-        slot_id, patient_name, patient_contact, status, expires_at = proposal
+        slot_id, patient_name, patient_contact, status, expires_at, proposal_user_id = proposal
 
         if status != "pending":
             raise ValueError(
@@ -184,6 +196,7 @@ def confirm_booking_proposal(
             patient_name=patient_name,
             patient_contact=patient_contact,
             manage_transaction=False,
+            user_id=proposal_user_id,
         )
 
         conn.execute(

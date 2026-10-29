@@ -233,3 +233,49 @@ def test_proposal_cannot_be_confirmed_twice(db):
         "SELECT COUNT(*) FROM appointments WHERE slot_id = ?",
         (slot_id,),
     ).fetchone()[0] == 1
+
+
+def test_only_one_of_two_proposals_for_same_slot_can_be_confirmed(db):
+    conn, slot_id = db
+
+    first_proposal = create_booking_proposal(
+        conn,
+        slot_id,
+        "Patient One",
+        "contact-one",
+    )
+    second_proposal = create_booking_proposal(
+        conn,
+        slot_id,
+        "Patient Two",
+        "contact-two",
+    )
+
+    # Both proposals may be pending, but only one can book the slot.
+    first_booking = confirm_booking_proposal(
+        conn, first_proposal["proposal_id"]
+    )
+
+    with pytest.raises(ValueError, match="not available"):
+        confirm_booking_proposal(
+            conn, second_proposal["proposal_id"]
+        )
+
+    slot_status = conn.execute(
+        "SELECT status FROM appointment_slots WHERE slot_id = ?",
+        (slot_id,),
+    ).fetchone()[0]
+
+    appointment_count = conn.execute(
+        "SELECT COUNT(*) FROM appointments WHERE slot_id = ?",
+        (slot_id,),
+    ).fetchone()[0]
+
+    second_stored_proposal = get_booking_proposal(
+        conn, second_proposal["proposal_id"]
+    )
+
+    assert first_booking["status"] == "confirmed"
+    assert slot_status == "booked"
+    assert appointment_count == 1
+    assert second_stored_proposal["status"] == "pending"

@@ -17,6 +17,7 @@ function App() {
   const [authName, setAuthName] = useState('')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authMessage, setAuthMessage] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
@@ -68,6 +69,8 @@ async function submitAuth(event) {
         }),
       })
 
+      
+      
       const registerData = await registerResponse.json()
 
       if (!registerResponse.ok) {
@@ -77,7 +80,16 @@ async function submitAuth(event) {
             : 'Unable to create your account.'
         )
       }
+
+      setAuthMessage('Account created successfully. Please sign in.')
+      setAuthError('')
+      setAuthMode('login')
+      setAuthPassword('')
+      setShowPassword(false)
+      return
     }
+
+
 
     const response = await fetch('/auth/login', {
       method: 'POST',
@@ -100,6 +112,7 @@ async function submitAuth(event) {
 
     setAuthToken(data.access_token)
     setAuthUser(data.user)
+    setActivePage('overview')
     setAuthPassword('')
     setAuthMessage(
       isRegistering ? 'Account created successfully.' : 'Signed in successfully.'
@@ -345,23 +358,58 @@ async function confirmBookingProposal() {
   }
 }
 
-  async function lookUpAppointment(event) {
-    event.preventDefault()
-    setLookupResult(null)
-    setBookingError('')
+  
+async function lookUpAppointment(event) {
+  event.preventDefault()
+  setLookupResult(null)
+  setBookingError('')
 
-    try {
-      const response = await fetch(`/appointments/${encodeURIComponent(bookingReference.trim())}`)
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Appointment not found.')
-      setLookupResult(data)
-    } catch (error) {
-      setBookingError(error.message)
-    }
+  if (!authToken || !authUser) {
+    setBookingError('Please sign in to look up your appointments.')
+    setAuthMode('login')
+    setActivePage('auth')
+    return
   }
 
+  if (!bookingReference.trim()) {
+    setBookingError('Enter a booking reference.')
+    return
+  }
+
+  try {
+    const response = await fetch(
+      `/appointments/${encodeURIComponent(bookingReference.trim())}`,
+      {
+        headers: { ...authHeaders() },
+      }
+    )
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string'
+          ? data.detail
+          : 'Appointment not found.'
+      )
+    }
+
+    setLookupResult(data)
+  } catch (error) {
+    setBookingError(error.message)
+  }
+}
+
   
+
 async function cancelExistingAppointment() {
+  if (!authToken || !authUser) {
+    setBookingError('Please sign in to cancel an appointment.')
+    setAuthMode('login')
+    setActivePage('auth')
+    return
+  }
+
   if (!bookingReference.trim()) return
 
   const confirmed = window.confirm(
@@ -371,18 +419,24 @@ async function cancelExistingAppointment() {
   if (!confirmed) return
 
   setBookingError('')
-  setLookupResult(null)
 
   try {
     const response = await fetch(
       `/appointments/${encodeURIComponent(bookingReference.trim())}/cancel`,
-      { method: 'POST' }
+      {
+        method: 'POST',
+        headers: { ...authHeaders() },
+      }
     )
 
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error(data.detail || 'Unable to cancel appointment.')
+      throw new Error(
+        typeof data.detail === 'string'
+          ? data.detail
+          : 'Unable to cancel appointment.'
+      )
     }
 
     setLookupResult(data)
@@ -430,18 +484,32 @@ function renderAuthPage() {
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="authPassword">Password</label>
-            <input
-              id="authPassword"
-              type="password"
-              value={authPassword}
-              onChange={(event) => setAuthPassword(event.target.value)}
-              minLength={authMode === 'register' ? 8 : 1}
-              maxLength={128}
-              required
-            />
-          </div>
+          
+<div className="field">
+  <label htmlFor="authPassword">Password</label>
+
+  <div className="password-input-wrapper">
+    <input
+      id="authPassword"
+      type={showPassword ? 'text' : 'password'}
+      value={authPassword}
+      onChange={(event) => setAuthPassword(event.target.value)}
+      minLength={authMode === 'register' ? 8 : 1}
+      maxLength={128}
+      required
+    />
+
+    <button
+      type="button"
+      className="password-toggle"
+      onClick={() => setShowPassword((previous) => !previous)}
+      aria-label={showPassword ? 'Hide password' : 'Show password'}
+    >
+      {showPassword ? 'Hide' : 'Show'}
+    </button>
+  </div>
+</div>
+
 
           {authError && <div className="error-box">{authError}</div>}
           {authMessage && <div className="inline-message">{authMessage}</div>}
@@ -684,8 +752,22 @@ function renderAuthPage() {
           <h2>Appointments</h2>
           <p>Manage application-level appointment slots. These are not live hospital schedules.</p>
         </div>
-
-        <div className="two-column">
+        {!authUser && (
+  <div className="notice">
+    Please sign in to create bookings, look up appointments, or cancel them.
+    <button
+      type="button"
+      className="secondary-button"
+      onClick={() => {
+        setAuthMode('login')
+        setActivePage('auth')
+      }}
+    >
+      Sign in
+    </button>
+  </div>
+)}
+        {authUser && <div className="two-column">
           <section className="panel">
             <h3>Find available slots</h3>
             <form onSubmit={loadSlots} className="stack-form">
@@ -708,6 +790,7 @@ function renderAuthPage() {
               </div>
               <button type="submit" className="secondary-button">Create slot</button>
             </form>
+          
 
             {slotError && <div className="inline-message">{slotError}</div>}
             {slots.length > 0 && (
@@ -750,24 +833,37 @@ function renderAuthPage() {
               </button>
             </form>
 
-            {booking && (
-              <div className="success-box">
-                <h4>Booking response</h4>
-                <pre>{booking.status === 'proposal_created' && (
-  <button
-    type="button"
-    onClick={confirmBookingProposal}
-  >
-    Explicitly confirm appointment
-  </button>
-)}</pre>
-                {(booking.booking_reference || booking.reference) && (
-                  <button className="secondary-button" onClick={() => setBookingReference(booking.booking_reference || booking.reference)}>
-                    Use reference for lookup
-                  </button>
-                )}
-              </div>
-            )}
+            
+{booking && (
+  <div className="success-box">
+    <h4>Booking response</h4>
+
+    <pre>{JSON.stringify(booking, null, 2)}</pre>
+
+    {booking.status === 'proposal_created' && (
+      <button
+        type="button"
+        onClick={confirmBookingProposal}
+      >
+        Explicitly confirm appointment
+      </button>
+    )}
+
+    {(booking.booking_reference || booking.reference) && (
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() =>
+          setBookingReference(
+            booking.booking_reference || booking.reference
+          )
+        }
+      >
+        Use reference for lookup
+      </button>
+    )}
+  </div>
+)}
 
             <form className="stack-form lookup-form" onSubmit={lookUpAppointment}>
               <h4>Find an existing booking</h4>
@@ -797,9 +893,12 @@ function renderAuthPage() {
               </div>
             )}
 
-            {bookingError && <div className="error-box">{bookingError}</div>}
+                        {bookingError && (
+              <div className="error-box">{bookingError}</div>
+            )}
           </section>
         </div>
+        }
       </>
     )
   }

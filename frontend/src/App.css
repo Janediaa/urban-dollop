@@ -174,3 +174,33 @@ textarea { resize: vertical; line-height: 1.7; }
   .filter-form, .doctor-grid, .two-column { grid-template-columns: 1fr; }
   .footer { padding: 16px 18px; }
 }
+
+
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding-right: 76px;
+  box-sizing: border-box;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  border: none;
+  background: transparent;
+  color: #176b5b;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px;
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid #176b5b;
+  outline-offset: 2px;
+}

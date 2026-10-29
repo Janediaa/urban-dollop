@@ -218,3 +218,54 @@ def test_booking_proposal_status_rejects_invalid_values():
 
     finally:
         conn.close()
+
+def test_users_table_is_created_with_required_columns():
+    conn = sqlite3.connect(":memory:")
+
+    try:
+        create_tables(conn)
+
+        columns = {
+            column[1]
+            for column in conn.execute(
+                "PRAGMA table_info(users)"
+            ).fetchall()
+        }
+
+        assert {
+            "user_id",
+            "full_name",
+            "email",
+            "password_hash",
+            "created_at",
+        }.issubset(columns)
+
+    finally:
+        conn.close()
+
+
+def test_user_email_must_be_unique():
+    conn = sqlite3.connect(":memory:")
+
+    try:
+        create_tables(conn)
+
+        conn.execute(
+            """
+            INSERT INTO users (full_name, email, password_hash)
+            VALUES (?, ?, ?)
+            """,
+            ("Test Patient", "patient@example.com", "test-hash"),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """
+                INSERT INTO users (full_name, email, password_hash)
+                VALUES (?, ?, ?)
+                """,
+                ("Another Patient", "patient@example.com", "another-hash"),
+            )
+
+    finally:
+        conn.close()

@@ -10,6 +10,17 @@ def create_tables(conn : sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
+        # Store registered patient accounts.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Create hospitals table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS hospitals (
@@ -90,6 +101,22 @@ def create_tables(conn : sqlite3.Connection) -> None:
                 REFERENCES appointments (booking_reference)
         )
     """)
-    
+
+        # Safely add ownership columns to databases created by older versions.
+    for table_name in ("appointments", "booking_proposals"):
+        columns = {
+            row[1]
+            for row in conn.execute(
+                f"PRAGMA table_info({table_name})"
+            ).fetchall()
+        }
+
+        if "user_id" not in columns:
+            conn.execute(
+                f"""
+                ALTER TABLE {table_name}
+                ADD COLUMN user_id INTEGER REFERENCES users(user_id)
+                """
+            )
 
     conn.commit()

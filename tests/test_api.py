@@ -76,6 +76,7 @@ def setup_test_database(path):
         conn.close()
 
 
+
 def test_proposal_api_and_confirmation_flow(tmp_path, monkeypatch):
     db_path = tmp_path / "api_test.db"
     slot_id = setup_test_database(db_path)
@@ -95,8 +96,34 @@ def test_proposal_api_and_confirmation_flow(tmp_path, monkeypatch):
     )
 
     with TestClient(api.app) as client:
+        # Register a test patient.
+        registration = client.post(
+            "/auth/register",
+            json={
+                "full_name": "Test Patient",
+                "email": "patient@example.com",
+                "password": "securepass123",
+            },
+        )
+        assert registration.status_code == 201
+
+        # Log in and obtain the JWT.
+        login = client.post(
+            "/auth/login",
+            json={
+                "email": "patient@example.com",
+                "password": "securepass123",
+            },
+        )
+        assert login.status_code == 200
+
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Create a proposal as the authenticated patient.
         response = client.post(
             "/appointments/proposals",
+            headers=headers,
             json={
                 "slot_id": slot_id,
                 "patient_name": "Test Patient",
@@ -109,6 +136,7 @@ def test_proposal_api_and_confirmation_flow(tmp_path, monkeypatch):
         assert proposal["status"] == "pending"
         assert proposal["requires_confirmation"] is True
 
+        # Creating a proposal must not book the slot yet.
         conn = sqlite3.connect(db_path)
         slot_status = conn.execute(
             "SELECT status FROM appointment_slots WHERE slot_id = ?",
@@ -123,8 +151,10 @@ def test_proposal_api_and_confirmation_flow(tmp_path, monkeypatch):
         assert slot_status == "available"
         assert appointment_count == 0
 
+        # Confirm the proposal using the same authenticated patient.
         confirmation = client.post(
             "/appointments/proposals/confirm",
+            headers=headers,
             json={"proposal_id": proposal["proposal_id"]},
         )
 
@@ -133,12 +163,15 @@ def test_proposal_api_and_confirmation_flow(tmp_path, monkeypatch):
         assert booking["status"] == "confirmed"
         assert booking["slot_id"] == slot_id
 
+        # Confirming the same proposal again must fail.
         repeated = client.post(
             "/appointments/proposals/confirm",
+            headers=headers,
             json={"proposal_id": proposal["proposal_id"]},
         )
         assert repeated.status_code == 409
 
+        # Only one appointment should have been created.
         conn = sqlite3.connect(db_path)
         appointment_count = conn.execute(
             "SELECT COUNT(*) FROM appointments WHERE slot_id = ?",
@@ -161,3 +194,185 @@ def test_direct_booking_endpoint_is_disabled():
         )
 
     assert response.status_code == 409
+
+
+def test_protected_appointment_endpoints_require_authentication(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "auth_required_test.db"
+    slot_id = setup_test_database(db_path)
+
+    def override_get_db():
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setitem(
+        api.app.dependency_overrides,
+        api.get_db,
+        override_get_db,
+    )
+
+    with TestClient(api.app) as client:
+        proposal = client.post(
+            "/appointments/proposals",
+            json={
+                "slot_id": slot_id,
+                "patient_name": "Test Patient",
+                "patient_contact": "test-contact",
+            },
+        )
+
+        confirmation = client.post(
+            "/appointments/proposals/confirm",
+            json={"proposal_id": "unknown-proposal"},
+        )
+
+        lookup = client.get("/appointments/unknown-reference")
+
+        cancellation = client.post(
+            "/appointments/unknown-reference/cancel"
+        )
+
+    assert proposal.status_code == 401
+    assert confirmation.status_code == 401
+    assert lookup.status_code == 401
+    assert cancellation.status_code == 401
+
+    api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_patient_cannot_access_another_patients_appointment(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "ownership_test.db"
+    slot_id = setup_test_database(db_path)
+
+    def override_get_db():
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setitem(
+        api.app.dependency_overrides,
+        api.get_db,
+        override_get_db,
+    )
+
+    def register_and_login(client, name, email):
+        registration = client.post(
+            "/auth/register",
+            json={
+                "full_name": name,
+                "email": email,
+                "password": "securepass123",
+            },
+        )
+        assert registration.status_code == 201
+
+        login = client.post(
+            "/auth/login",
+            json={
+                "email": email,
+                "password": "securepass123",
+            },
+        )
+        assert login.status_code == 200
+
+        token = login.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    try:
+        with TestClient(api.app) as client:
+            patient_a = register_and_login(
+                client, "Patient A", "patient-a@example.com"
+            )
+            patient_b = register_and_login(
+                client, "Patient B", "patient-b@example.com"
+            )
+
+            # Patient A creates a proposal.
+            proposal_response = client.post(
+                "/appointments/proposals",
+                headers=patient_a,
+                json={
+                    "slot_id": slot_id,
+                    "patient_name": "Patient A",
+                    "patient_contact": "contact-a",
+                },
+            )
+            assert proposal_response.status_code == 200
+            proposal_id = proposal_response.json()["proposal_id"]
+
+            # Patient B must not confirm Patient A's proposal.
+            other_confirmation = client.post(
+                "/appointments/proposals/confirm",
+                headers=patient_b,
+                json={"proposal_id": proposal_id},
+            )
+            assert other_confirmation.status_code == 404
+
+            # Patient A can confirm their own proposal.
+            confirmation = client.post(
+                "/appointments/proposals/confirm",
+                headers=patient_a,
+                json={"proposal_id": proposal_id},
+            )
+            assert confirmation.status_code == 200
+            booking_reference = confirmation.json()["booking_reference"]
+
+            # Patient B cannot retrieve Patient A's appointment.
+            other_lookup = client.get(
+                f"/appointments/{booking_reference}",
+                headers=patient_b,
+            )
+            assert other_lookup.status_code == 404
+
+            # Patient B cannot cancel Patient A's appointment.
+            other_cancellation = client.post(
+                f"/appointments/{booking_reference}/cancel",
+                headers=patient_b,
+            )
+            assert other_cancellation.status_code == 404
+
+            # Patient A's appointment must still be confirmed.
+            conn = sqlite3.connect(db_path)
+            try:
+                appointment = conn.execute(
+                    """
+                    SELECT user_id, status
+                    FROM appointments
+                    WHERE booking_reference = ?
+                    """,
+                    (booking_reference,),
+                ).fetchone()
+
+                assert appointment is not None
+                assert appointment[1] == "confirmed"
+            finally:
+                conn.close()
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_create_slot_endpoint_is_disabled_outside_development(monkeypatch):
+    monkeypatch.setattr(api, "APP_ENV", "production")
+
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/appointments/slots",
+            json={
+                "doctor_id": 1,
+                "appointment_date": "2030-12-15",
+                "appointment_time": "10:00",
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Endpoint not available."

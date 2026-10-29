@@ -97,6 +97,7 @@ def book_appointment(
     patient_contact: str,
     *,
     manage_transaction: bool = True,
+    user_id: int | None = None,
 ) -> dict:
     """Book an available slot without allowing duplicate active bookings."""
 
@@ -170,13 +171,15 @@ def book_appointment(
                     patient_contact = ?,
                     status = 'confirmed',
                     booking_reference = ?,
-                    created_at = CURRENT_TIMESTAMP
+                    created_at = CURRENT_TIMESTAMP,
+                    user_id = ?
                 WHERE appointment_id = ?
                 """,
                 (
                     patient_name.strip(),
                     patient_contact.strip(),
                     booking_reference,
+                    user_id,
                     appointment_id,
                 ),
             )
@@ -190,20 +193,23 @@ def book_appointment(
                     booking_reference,
                     slot_id,
                     patient_name,
-                    patient_contact
+                    patient_contact,
+                    user_id
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     booking_reference,
                     slot_id,
                     patient_name.strip(),
                     patient_contact.strip(),
+                    user_id,
                 ),
             )
             appointment_id = cursor.lastrowid
 
-        conn.execute(
+        
+        slot_update = conn.execute(
             """
             UPDATE appointment_slots
             SET status = 'booked'
@@ -211,6 +217,10 @@ def book_appointment(
             """,
             (slot_id,),
         )
+
+        if slot_update.rowcount != 1:
+            raise ValueError("Appointment slot is not available")
+
 
         if manage_transaction:
             conn.commit()
@@ -234,6 +244,8 @@ def book_appointment(
 def get_appointment_by_reference(
     conn: sqlite3.Connection,
     booking_reference: str,
+    *,
+    user_id: int | None = None,
 ) -> dict | None:
     """Return a booking with its doctor and hospital details."""
 
@@ -260,8 +272,9 @@ def get_appointment_by_reference(
         JOIN doctors AS d ON d.doctor_id = s.doctor_id
         LEFT JOIN hospitals AS h ON h.hospital_id = d.hospital_id
         WHERE a.booking_reference = ?
+            AND (? IS NULL OR a.user_id = ?)
         """,
-        (booking_reference,),
+        (booking_reference, user_id, user_id),
     )
 
     row = cursor.fetchone()
@@ -275,6 +288,8 @@ def get_appointment_by_reference(
 def cancel_appointment(
     conn: sqlite3.Connection,
     booking_reference: str,
+    *,
+    user_id: int | None = None,
 ) -> dict:
     """Cancel a confirmed booking and release its slot."""
 
@@ -286,8 +301,9 @@ def cancel_appointment(
             SELECT appointment_id, slot_id, status
             FROM appointments
             WHERE booking_reference = ?
+                AND (? IS NULL OR user_id = ?)
             """,
-            (booking_reference,),
+            (booking_reference, user_id, user_id),
         )
         appointment = cursor.fetchone()
 

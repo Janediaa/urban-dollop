@@ -1,12 +1,18 @@
+import os
 import sqlite3
+from dotenv import load_dotenv
 from pathlib import Path
 from typing import Literal
 
 import time
 import traceback
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field
+
+from src.database.models import create_tables
+
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from contextlib import asynccontextmanager
 
@@ -29,13 +35,31 @@ from src.services.booking_proposal_service import (
     confirm_booking_proposal,
 )
 
+import jwt
+
+from src.services.auth_service import (
+    authenticate_user,
+    create_access_token,
+    decode_access_token,
+    register_user,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
+
 DATABASE_PATH = PROJECT_ROOT / "data" / "healthcare.db"
+APP_ENV = os.getenv("APP_ENV", "production").strip().lower()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize shared AI resources once when the API starts."""
+    """Initialize database and shared AI resources at startup."""
+    conn = get_connection(DATABASE_PATH)
+    try:
+        create_tables(conn)
+    finally:
+        conn.close()
+
     app.state.medical_qa_service = MedicalQAService()
     app.state.healthcare_graph = build_healthcare_graph()
 
@@ -54,7 +78,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
 def get_db():
     """Provide a database connection for one request."""
     conn = get_connection(DATABASE_PATH)
@@ -62,6 +85,48 @@ def get_db():
         yield conn
     finally:
         conn.close()
+
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """Authenticate a request using its bearer access token."""
+
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired authentication credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    if credentials is None:
+        raise unauthorized
+
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except jwt.PyJWTError:
+        raise unauthorized
+
+    user = conn.execute(
+        """
+        SELECT user_id, full_name, email
+        FROM users
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+
+    if user is None:
+        raise unauthorized
+
+    return {
+        "user_id": user[0],
+        "full_name": user[1],
+        "email": user[2],
+    }
 
 
 class AppointmentSlotRequest(BaseModel):
@@ -89,11 +154,68 @@ class BookingConfirmationRequest(BaseModel):
     proposal_id: str = Field(min_length=1, max_length=100)
 
 
+class UserRegistrationRequest(BaseModel):
+    full_name: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
+
 @app.get("/health", tags=["Health"])
 def health_check():
     return {
         "status": "ok",
         "service": "Healthcare Navigator API",
+    }
+
+
+@app.post("/auth/register", tags=["Authentication"], status_code=201)
+def register_endpoint(
+    request: UserRegistrationRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Register a new patient account."""
+
+    try:
+        return register_user(
+            conn,
+            full_name=request.full_name,
+            email=request.email,
+            password=request.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/auth/login", tags=["Authentication"])
+def login_endpoint(
+    request: UserLoginRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Authenticate a patient and return a bearer access token."""
+
+    user = authenticate_user(
+        conn,
+        email=request.email,
+        password=request.password,
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {
+        "access_token": create_access_token(user["user_id"]),
+        "token_type": "bearer",
+        "user": user,
     }
 
 
@@ -140,6 +262,11 @@ def create_slot_endpoint(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     """Create an application-managed appointment slot for development."""
+    if APP_ENV != "development":
+        raise HTTPException(
+            status_code=404,
+            detail="Endpoint not available.",
+        )
     try:
         return create_appointment_slot(
             conn,
@@ -184,10 +311,12 @@ def book_appointment_endpoint():
 
 
 
+
 @app.post("/appointments/proposals", tags=["Appointments"])
 def create_booking_proposal_endpoint(
     request: BookingProposalRequest,
     conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     try:
         return create_booking_proposal(
@@ -195,9 +324,12 @@ def create_booking_proposal_endpoint(
             slot_id=request.slot_id,
             patient_name=request.patient_name,
             patient_contact=request.patient_contact,
+            user_id=current_user["user_id"],
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 
 
 
@@ -205,27 +337,39 @@ def create_booking_proposal_endpoint(
 def confirm_booking_proposal_endpoint(
     request: BookingConfirmationRequest,
     conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     try:
         return confirm_booking_proposal(
             conn,
             proposal_id=request.proposal_id,
+            user_id=current_user["user_id"],
         )
     except ValueError as exc:
         message = str(exc)
-        status_code = 404 if message == "Booking proposal not found" else 409
+        status_code = (
+            404
+            if message == "Booking proposal not found"
+            else 409
+        )
         raise HTTPException(
             status_code=status_code,
             detail=message,
         ) from exc
 
 
+
 @app.get("/appointments/{booking_reference}", tags=["Appointments"])
 def get_appointment_endpoint(
     booking_reference: str,
     conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
-    appointment = get_appointment_by_reference(conn, booking_reference)
+    appointment = get_appointment_by_reference(
+        conn,
+        booking_reference,
+        user_id=current_user["user_id"],
+    )
 
     if appointment is None:
         raise HTTPException(
@@ -236,6 +380,7 @@ def get_appointment_endpoint(
     return appointment
 
 
+
 @app.post(
     "/appointments/{booking_reference}/cancel",
     tags=["Appointments"],
@@ -243,9 +388,14 @@ def get_appointment_endpoint(
 def cancel_appointment_endpoint(
     booking_reference: str,
     conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     try:
-        return cancel_appointment(conn, booking_reference)
+        return cancel_appointment(
+            conn,
+            booking_reference,
+            user_id=current_user["user_id"],
+        )
     except ValueError as exc:
         status_code = (
             404 if str(exc) == "Appointment not found" else 400
@@ -254,6 +404,7 @@ def cancel_appointment_endpoint(
             status_code=status_code,
             detail=str(exc),
         ) from exc
+
 
 @app.post("/medical/ask", tags=["Medical Q&A"])
 def ask_medical_question(request: MedicalQuestionRequest):
