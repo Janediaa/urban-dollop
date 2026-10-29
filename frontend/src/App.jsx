@@ -11,6 +11,16 @@ const navItems = [
 
 function App() {
   const [activePage, setActivePage] = useState('overview')
+  const [authMode, setAuthMode] = useState('login')
+  const [authUser, setAuthUser] = useState(null)
+  const [authToken, setAuthToken] = useState('')
+  const [authName, setAuthName] = useState('')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
   const [asking, setAsking] = useState(false)
@@ -36,6 +46,88 @@ function App() {
   const [bookingError, setBookingError] = useState('')
   const [bookingReference, setBookingReference] = useState('')
   const [lookupResult, setLookupResult] = useState(null)
+
+  
+async function submitAuth(event) {
+  event.preventDefault()
+  setAuthError('')
+  setAuthMessage('')
+  setAuthLoading(true)
+
+  const isRegistering = authMode === 'register'
+
+  try {
+    if (isRegistering) {
+      const registerResponse = await fetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: authName.trim(),
+          email: authEmail.trim(),
+          password: authPassword,
+        }),
+      })
+
+      const registerData = await registerResponse.json()
+
+      if (!registerResponse.ok) {
+        throw new Error(
+          typeof registerData.detail === 'string'
+            ? registerData.detail
+            : 'Unable to create your account.'
+        )
+      }
+    }
+
+    const response = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: authEmail.trim(),
+        password: authPassword,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string'
+          ? data.detail
+          : 'Unable to sign in.'
+      )
+    }
+
+    setAuthToken(data.access_token)
+    setAuthUser(data.user)
+    setAuthPassword('')
+    setAuthMessage(
+      isRegistering ? 'Account created successfully.' : 'Signed in successfully.'
+    )
+  } catch (error) {
+    setAuthError(error.message)
+  } finally {
+    setAuthLoading(false)
+  }
+}
+
+function logOut() {
+  setAuthToken('')
+  setAuthUser(null)
+  setAuthPassword('')
+  setAuthMessage('')
+  setAuthError('')
+  setBooking(null)
+  setLookupResult(null)
+  setBookingReference('')
+}
+
+function authHeaders() {
+  return authToken
+    ? { Authorization: `Bearer ${authToken}` }
+    : {}
+}
+
 
   async function askMedicalQuestion(event) {
     event.preventDefault()
@@ -145,28 +237,113 @@ function App() {
     setSlots(data.slots || [])
   }
 
-  async function bookAppointment(event) {
-    event.preventDefault()
-    setBooking(null)
-    setBookingError('')
+  
+async function bookAppointment(event) {
+  event.preventDefault()
+  setBooking(null)
+  setBookingError('')
 
-    try {
-      const response = await fetch('/appointments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slot_id: Number(selectedSlot),
-          patient_name: patientName,
-          patient_contact: patientContact,
-        }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Unable to book appointment.')
-      setBooking(data)
-    } catch (error) {
-      setBookingError(error.message)
-    }
+  if (!authToken || !authUser) {
+    setBookingError('Please sign in before booking an appointment.')
+    setAuthMode('login')
+    setActivePage('auth')
+    return
   }
+
+  if (!selectedSlot || !patientName.trim() || !patientContact.trim()) {
+    setBookingError('Please complete all appointment details.')
+    return
+  }
+
+  try {
+    const response = await fetch('/appointments/proposals', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      },
+      body: JSON.stringify({
+        slot_id: Number(selectedSlot),
+        patient_name: patientName.trim(),
+        patient_contact: patientContact.trim(),
+      }),
+    })
+
+    const proposal = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        typeof proposal.detail === 'string'
+          ? proposal.detail
+          : 'Unable to create booking proposal.'
+      )
+    }
+
+    setBooking({
+      ...proposal,
+      status: 'proposal_created',
+      message: 'Review the proposal and explicitly confirm to complete your booking.',
+    })
+  } catch (error) {
+    setBookingError(error.message)
+  }
+}
+
+  
+async function confirmBookingProposal() {
+  if (!authToken || !authUser) {
+    setBookingError('Please sign in before confirming a booking.')
+    setAuthMode('login')
+    setActivePage('auth')
+    return
+  }
+
+  const proposalId = booking?.proposal_id
+
+  if (!proposalId) {
+    setBookingError('No valid booking proposal is available to confirm.')
+    return
+  }
+
+  setBookingError('')
+
+  try {
+    const response = await fetch('/appointments/proposals/confirm', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      },
+      body: JSON.stringify({ proposal_id: proposalId }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === 'string'
+          ? data.detail
+          : 'Unable to confirm the booking.'
+      )
+    }
+
+    setBooking({
+      ...data,
+      status: 'confirmed',
+      message: 'Your appointment has been confirmed.',
+    })
+
+    const reference = data.booking_reference || data.reference
+
+    if (reference) {
+      setBookingReference(reference)
+    }
+
+    await loadSlotsForCurrentDate()
+  } catch (error) {
+    setBookingError(error.message)
+  }
+}
 
   async function lookUpAppointment(event) {
     event.preventDefault()
@@ -212,6 +389,103 @@ async function cancelExistingAppointment() {
   } catch (error) {
     setBookingError(error.message)
   }
+}
+
+  
+function renderAuthPage() {
+  return (
+    <div className="two-column">
+      <section className="panel">
+        <span className="eyebrow">PATIENT ACCOUNT</span>
+        <h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2>
+        <p>
+          {authMode === 'register'
+            ? 'Register to manage your appointments securely.'
+            : 'Sign in to book and manage your appointments.'}
+        </p>
+
+        <form className="stack-form" onSubmit={submitAuth}>
+          {authMode === 'register' && (
+            <div className="field">
+              <label htmlFor="authName">Full name</label>
+              <input
+                id="authName"
+                value={authName}
+                onChange={(event) => setAuthName(event.target.value)}
+                maxLength={100}
+                required
+              />
+            </div>
+          )}
+
+          <div className="field">
+            <label htmlFor="authEmail">Email address</label>
+            <input
+              id="authEmail"
+              type="email"
+              value={authEmail}
+              onChange={(event) => setAuthEmail(event.target.value)}
+              maxLength={254}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="authPassword">Password</label>
+            <input
+              id="authPassword"
+              type="password"
+              value={authPassword}
+              onChange={(event) => setAuthPassword(event.target.value)}
+              minLength={authMode === 'register' ? 8 : 1}
+              maxLength={128}
+              required
+            />
+          </div>
+
+          {authError && <div className="error-box">{authError}</div>}
+          {authMessage && <div className="inline-message">{authMessage}</div>}
+
+          <button type="submit" disabled={authLoading}>
+            {authLoading
+              ? 'Please wait...'
+              : authMode === 'register'
+                ? 'Create account'
+                : 'Sign in'}
+          </button>
+        </form>
+
+        <div className="form-footer">
+          {authMode === 'register'
+            ? 'Already have an account?'
+            : 'New to Healthcare Navigator?'}
+          {' '}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => {
+              setAuthMode(authMode === 'register' ? 'login' : 'register')
+              setAuthError('')
+              setAuthMessage('')
+            }}
+          >
+            {authMode === 'register' ? 'Sign in' : 'Create an account'}
+          </button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h3>Why sign in?</h3>
+        <p>Your account lets you:</p>
+        <ul>
+          <li>Create and confirm appointment bookings.</li>
+          <li>Look up your own bookings.</li>
+          <li>Cancel your confirmed appointments.</li>
+        </ul>
+        <p>Medical questions and doctor discovery remain available without signing in.</p>
+      </section>
+    </div>
+  )
 }
 
 
@@ -471,13 +745,22 @@ async function cancelExistingAppointment() {
                 <label htmlFor="patientContact">Contact details</label>
                 <input id="patientContact" value={patientContact} onChange={(event) => setPatientContact(event.target.value)} maxLength={30} placeholder="Phone or email" required />
               </div>
-              <button type="submit">Confirm booking</button>
+              <button type="submit">
+                Create booking proposal
+              </button>
             </form>
 
             {booking && (
               <div className="success-box">
                 <h4>Booking response</h4>
-                <pre>{JSON.stringify(booking, null, 2)}</pre>
+                <pre>{booking.status === 'proposal_created' && (
+  <button
+    type="button"
+    onClick={confirmBookingProposal}
+  >
+    Explicitly confirm appointment
+  </button>
+)}</pre>
                 {(booking.booking_reference || booking.reference) && (
                   <button className="secondary-button" onClick={() => setBookingReference(booking.booking_reference || booking.reference)}>
                     Use reference for lookup
@@ -526,6 +809,7 @@ async function cancelExistingAppointment() {
     medical: 'Medical AI',
     doctors: 'Find doctors',
     appointments: 'Appointments',
+    auth: 'Sign in',
   }
 
   return (
@@ -559,7 +843,36 @@ async function cancelExistingAppointment() {
             <span className="breadcrumb">Healthcare Navigator /</span>
             <strong>{pageTitles[activePage]}</strong>
           </div>
-          <span className="environment-pill"><span /> DEVELOPMENT</span>
+          
+<div className="topbar-actions">
+  {authUser ? (
+    <>
+      <span>Signed in as {authUser.full_name}</span>
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={logOut}
+      >
+        Sign out
+      </button>
+    </>
+  ) : (
+    <button
+      type="button"
+      className="secondary-button"
+      onClick={() => {
+        setAuthMode('login')
+        setAuthError('')
+        setAuthMessage('')
+        setActivePage('auth')
+      }}
+    >
+      Sign in
+    </button>
+  )}
+  <span className="environment-pill"><span /> DEVELOPMENT</span>
+</div>
+
         </header>
 
         <div className="page-content">
@@ -567,6 +880,7 @@ async function cancelExistingAppointment() {
           {activePage === 'medical' && renderMedicalPage()}
           {activePage === 'doctors' && renderDoctorsPage()}
           {activePage === 'appointments' && renderAppointmentsPage()}
+          {activePage === 'auth' && renderAuthPage()}
         </div>
         <footer className="footer">Healthcare Navigator · Prototype · For informational use only</footer>
       </main>
