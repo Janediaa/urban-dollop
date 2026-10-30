@@ -204,3 +204,356 @@ textarea { resize: vertical; line-height: 1.7; }
   outline: 2px solid #176b5b;
   outline-offset: 2px;
 }
+
+
+/* Sign-out confirmation modal */
+.logout-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.logout-modal {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+  background: #ffffff;
+  color: #1e293b;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.logout-modal h2 {
+  margin: 0 0 12px;
+  font-size: 24px;
+}
+
+.logout-modal p {
+  margin: 0 0 24px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.logout-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.logout-cancel-button,
+.logout-confirm-button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.logout-cancel-button {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.logout-confirm-button {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.logout-cancel-button:hover {
+  background: #e2e8f0;
+}
+
+.logout-confirm-button:hover {
+  background: #b91c1c;
+}
+
+
+/* ========================================
+   TRIAGE — PRE-CONSULTATION EXPERIENCE
+   ======================================== */
+
+.triage-summary {
+  margin-top: 24px;
+  padding: 30px;
+  border: 1px solid #dcebe4;
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at top right, #edf8f2 0%, transparent 42%),
+    #ffffff;
+  box-shadow: 0 12px 34px rgba(25, 75, 57, 0.06);
+}
+
+.triage-summary > h3 {
+  margin-bottom: 24px;
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+
+.triage-summary > p {
+  margin: 13px 0;
+  color: #526a61;
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.triage-summary > p strong {
+  color: #234a3c;
+  font-weight: 700;
+}
+
+.triage-summary h4 {
+  margin: 25px 0 12px;
+  color: #24483c;
+  font-size: 13px;
+}
+
+.triage-summary ul {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 20px;
+  padding-left: 21px;
+  color: #536b62;
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.triage-summary li::marker {
+  color: #39866c;
+}
+
+.triage-summary .muted {
+  display: block;
+  margin-top: 25px;
+  padding-top: 17px;
+  border-top: 1px solid #e8f0eb;
+  line-height: 1.8;
+}
+
+/* Follow-up form */
+
+.triage-followup-form {
+  display: grid;
+  gap: 10px;
+  margin: 25px 0;
+  padding: 24px;
+  border: 1px solid #e0ece5;
+  border-radius: 15px;
+  background: #f7fbf8;
+}
+
+.triage-followup-form h4 {
+  margin: 0 0 2px;
+  font-family: Manrope, sans-serif;
+  font-size: 16px;
+  letter-spacing: -0.3px;
+}
+
+.triage-followup-form > p {
+  margin: 0 0 10px;
+  line-height: 1.8;
+}
+
+.triage-followup-form label {
+  display: block;
+  margin-top: 8px;
+  color: #405c50;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.triage-followup-form input,
+.triage-followup-form select {
+  width: 100%;
+  min-height: 45px;
+  padding: 11px 13px;
+  border: 1px solid #d7e5dc;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #263e34;
+  font-size: 13px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.triage-followup-form input::placeholder {
+  color: #94a79c;
+}
+
+.triage-followup-form input:focus,
+.triage-followup-form select:focus {
+  border-color: #69a991;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(105, 169, 145, 0.16);
+}
+
+.triage-followup-form .form-footer {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.triage-followup-form button[type="submit"] {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 10px;
+  background: #176c5c;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.18s, transform 0.18s;
+}
+
+.triage-followup-form button[type="submit"]:hover:not(:disabled) {
+  background: #115647;
+  transform: translateY(-1px);
+}
+
+.triage-followup-form button[type="submit"]:focus-visible {
+  outline: 3px solid #9ed2bc;
+  outline-offset: 3px;
+}
+
+/* Emergency guidance stays visually distinct */
+
+.triage-summary .error-box {
+  padding: 17px;
+  border-radius: 12px;
+  border-color: #f0c9c3;
+  background: #fff2f0;
+  color: #963d32;
+  line-height: 1.8;
+}
+
+.triage-summary .error-box p {
+  margin-bottom: 0;
+}
+
+/* Doctor recommendations */
+
+.triage-summary ul li {
+  padding-left: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* Responsive layout */
+
+@media (max-width: 720px) {
+  .triage-summary {
+    padding: 20px 17px;
+    border-radius: 15px;
+  }
+
+  .triage-summary > h3 {
+    font-size: 19px;
+  }
+
+  .triage-followup-form {
+    padding: 18px 14px;
+  }
+
+  .triage-followup-form .form-footer {
+    align-items: stretch;
+  }
+}
+
+
+/* Persistent emergency-help card */
+.emergency-help {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 20px;
+  border: 1px solid #f0c9c3;
+  border-radius: 16px;
+  background: linear-gradient(120deg, #fff4f1, #fffafa);
+}
+
+.emergency-help-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: #fbe2dd;
+  color: #a52b21;
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.emergency-help-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.emergency-help-copy h3 {
+  margin: 0 0 6px;
+  color: #7f2922;
+  font-family: Manrope, sans-serif;
+  font-size: 14px;
+}
+
+.emergency-help-copy p {
+  margin: 0;
+  color: #754d48;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.emergency-help-note {
+  display: block;
+  margin-top: 7px;
+  color: #8d3730;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.emergency-help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #a92f26;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.18s, transform 0.18s;
+}
+
+.emergency-help-button:hover {
+  background: #87241d;
+  transform: translateY(-1px);
+}
+
+.emergency-help-button:focus-visible {
+  outline: 3px solid #e7aaa2;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .emergency-help {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+
+  .emergency-help-copy {
+    flex-basis: calc(100% - 60px);
+  }
+
+  .emergency-help-button {
+    width: 100%;
+  }
+}

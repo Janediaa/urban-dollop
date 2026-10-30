@@ -17,6 +17,7 @@ class FakeMedicalQAService:
         }
 
 
+
 def make_test_database(path):
     conn = sqlite3.connect(path)
     create_tables(conn)
@@ -37,10 +38,17 @@ def make_test_database(path):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            "DOC001", "Dr. Test Sharma", "Cardiologist",
-            12, "Sector 18", 800, "Delhi", hospital_id,
+            "DOC001",
+            "Dr. Test Sharma",
+            "Cardiologist",
+            12,
+            "Sector 18",
+            800,
+            "Delhi",
+            hospital_id,
         ),
     )
+
     conn.commit()
     conn.close()
 
@@ -117,22 +125,27 @@ def test_appointment_request_requires_database_path():
     assert result["error"] == "Database path is unavailable."
 
 
+
 def test_graph_classifies_insurance_request():
     result = build_healthcare_graph().invoke({
         "question": "Check my health insurance coverage",
     })
 
     assert result["intent"] == "insurance"
-    assert "not implemented yet" in result["error"]
+    assert "error" in result
+    assert "authenticated user" in result["error"].lower()
 
 
-def test_graph_classifies_triage_request():
+def test_graph_routes_chest_pain_to_emergency_triage():
     result = build_healthcare_graph().invoke({
         "question": "I have chest pain",
     })
 
     assert result["intent"] == "triage"
-    assert "not implemented yet" in result["error"]
+    assert "result" in result
+    assert result["result"]["urgency_level"] == "emergency"
+    assert result["result"]["requires_emergency_care"] is True
+    assert result["result"]["recommended_doctors"] == []
 
 
 
@@ -244,3 +257,254 @@ def test_booking_proposal_does_not_modify_database(tmp_path):
 
     assert slot_status == "available"
     assert appointment_count == 0
+
+
+def test_graph_searches_hospitals_in_requested_city(tmp_path):
+    db_path = tmp_path / "healthcare_test.db"
+    make_test_database(db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO hospitals (hospital_name, city) VALUES (?, ?)",
+        ("Metro Hospital", "Noida"),
+    )
+    conn.commit()
+    conn.close()
+
+    result = build_healthcare_graph().invoke({
+        "question": "Find hospitals in Delhi",
+        "db_path": str(db_path),
+    })
+
+    assert result["intent"] == "hospital_search"
+    assert result["result"]["count"] == 1
+    assert result["result"]["hospitals"][0]["hospital_name"] == (
+        "City Heart Hospital"
+    )
+    assert result["result"]["filters"]["city"] == "Delhi"
+
+
+def test_graph_returns_zero_when_no_hospital_matches_city(tmp_path):
+    db_path = tmp_path / "healthcare_test.db"
+    make_test_database(db_path)
+
+    result = build_healthcare_graph().invoke({
+        "question": "Find hospitals in Mumbai",
+        "db_path": str(db_path),
+    })
+
+    assert result["intent"] == "hospital_search"
+    assert result["result"]["count"] == 0
+    assert result["result"]["hospitals"] == []
+    assert "No hospitals matched" in result["result"]["message"]
+
+
+def test_graph_returns_all_hospitals_when_city_is_not_specified(
+    tmp_path,
+):
+    db_path = tmp_path / "healthcare_test.db"
+    make_test_database(db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO hospitals (hospital_name, city) VALUES (?, ?)",
+        ("Metro Hospital", "Noida"),
+    )
+    conn.commit()
+    conn.close()
+
+    result = build_healthcare_graph().invoke({
+        "question": "Show all hospitals",
+        "db_path": str(db_path),
+    })
+
+    assert result["intent"] == "hospital_search"
+    assert result["result"]["count"] == 2
+    assert {
+        hospital["hospital_name"]
+        for hospital in result["result"]["hospitals"]
+    } == {"City Heart Hospital", "Metro Hospital"}
+
+def test_graph_triages_fever_with_general_physician_guidance():
+    result = build_healthcare_graph().invoke({
+        "question": "I have had a fever and cough",
+    })
+
+    assert result["intent"] == "triage"
+    assert "result" in result
+
+    triage = result["result"]
+    assert triage["urgency_level"] == "undetermined"
+    assert triage["requires_emergency_care"] is False
+    assert triage["possible_specialty"] == "general physician"
+    assert triage["requires_human_review"] is True
+    assert "not a diagnosis" in triage["message"]
+
+
+def test_triage_recommends_matching_doctors_in_user_city(tmp_path):
+    db_path = tmp_path / "triage_test.db"
+    make_test_database(db_path)
+
+    conn = sqlite3.connect(db_path)
+
+    hospital_id = conn.execute(
+        "SELECT hospital_id FROM hospitals LIMIT 1"
+    ).fetchone()[0]
+
+    conn.execute(
+        """
+        INSERT INTO doctors (
+            composite_doctor_id,
+            doctor_name,
+            doctor_type,
+            experience_years,
+            location,
+            fees,
+            city,
+            hospital_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "DOC002",
+            "Dr. General Physician",
+            "General Physician",
+            8,
+            "Central Delhi",
+            500,
+            "Delhi",
+            hospital_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough in Delhi",
+        "db_path": str(db_path),
+    })
+
+    assert result["intent"] == "triage"
+    triage = result["result"]
+
+    assert triage["possible_specialty"] == "general physician"
+    assert triage["location"] == "Delhi"
+    assert len(triage["recommended_doctors"]) == 1
+    assert (
+        triage["recommended_doctors"][0]["doctor_name"]
+        == "Dr. General Physician"
+    )
+
+
+def test_triage_does_not_recommend_unmatched_specialty(tmp_path):
+    db_path = tmp_path / "triage_test.db"
+    make_test_database(db_path)
+
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough in Delhi",
+        "db_path": str(db_path),
+    })
+
+    assert result["intent"] == "triage"
+
+    triage = result["result"]
+
+    assert triage["possible_specialty"] == "general physician"
+    assert triage["location"] == "Delhi"
+    assert triage["recommended_doctors"] == []
+
+
+def test_triage_asks_follow_up_questions_for_fever():
+    result = build_healthcare_graph().invoke({
+        "question": "I have had a fever and cough",
+    })
+
+    assert result["intent"] == "triage"
+    triage = result["result"]
+
+    assert triage["urgency_level"] == "undetermined"
+    assert triage["follow_up_questions"]
+    assert any(
+        "long" in question.lower()
+        or "duration" in question.lower()
+        for question in triage["follow_up_questions"]
+    )
+    assert any(
+        "temperature" in question.lower()
+        or "severe" in question.lower()
+        for question in triage["follow_up_questions"]
+    )
+    assert triage["summary"]["reported_symptoms"] == [
+        "fever",
+        "cough",
+    ]
+
+
+def test_triage_records_follow_up_answers():
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough",
+        "triage_answers": {
+            "duration": "3 days",
+            "severity": "moderate",
+            "progression": "getting worse",
+        },
+    })
+
+    triage = result["result"]
+
+    assert triage["summary"]["duration"] == "3 days"
+    assert triage["summary"]["severity"] == "moderate"
+    assert triage["summary"]["progression"] == "getting worse"
+
+
+def test_triage_marks_answered_questions_as_resolved():
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough",
+        "triage_answers": {
+            "duration": "3 days",
+            "severity": "moderate",
+            "progression": "stable",
+        },
+    })
+
+    summary = result["result"]["summary"]
+
+    assert summary["duration"] == "3 days"
+    assert summary["severity"] == "moderate"
+    assert summary["progression"] == "stable"
+    assert summary["unanswered_questions"] == []
+
+
+def test_triage_warns_when_severity_is_severe():
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough",
+        "triage_answers": {
+            "duration": "3 days",
+            "severity": "severe",
+            "progression": "stable",
+        },
+    })
+
+    triage = result["result"]
+
+    assert triage["urgency_level"] == "undetermined"
+    assert triage["requires_emergency_care"] is False
+    assert "prompt medical assessment" in triage["message"]
+
+
+def test_triage_warns_when_symptoms_are_worsening():
+    result = build_healthcare_graph().invoke({
+        "question": "I have a fever and cough",
+        "triage_answers": {
+            "duration": "3 days",
+            "severity": "moderate",
+            "progression": "worsening",
+        },
+    })
+
+    triage = result["result"]
+
+    assert triage["urgency_level"] == "undetermined"
+    assert triage["requires_emergency_care"] is False
+    assert "prompt medical assessment" in triage["message"]
+

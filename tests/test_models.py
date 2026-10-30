@@ -269,3 +269,36 @@ def test_user_email_must_be_unique():
 
     finally:
         conn.close()
+
+
+def test_insurance_policies_table_is_created_with_required_columns():
+    conn = sqlite3.connect(":memory:")
+
+    try:
+        create_tables(conn)
+
+        columns = {
+            column[1]
+            for column in conn.execute(
+                "PRAGMA table_info(insurance_policies)"
+            ).fetchall()
+        }
+
+        assert {
+            "policy_id",
+            "user_id",
+            "policy_number",
+            "insurer_name",
+            "plan_name",
+            "coverage_limit",
+            "deductible",
+            "copay_percentage",
+            "valid_from",
+            "valid_until",
+            "covered_services",
+            "excluded_services",
+        }.issubset(columns)
+
+    finally:
+        conn.close()
+

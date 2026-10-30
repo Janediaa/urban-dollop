@@ -128,15 +128,55 @@ def get_current_user(
         "email": user[2],
     }
 
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    conn: sqlite3.Connection = Depends(get_db),
+) -> dict | None:
+    """Return the authenticated user if a valid token is provided."""
+
+    if credentials is None:
+        return None
+
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired authentication credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except jwt.PyJWTError:
+        raise unauthorized
+
+    user = conn.execute(
+        """
+        SELECT user_id, full_name, email
+        FROM users
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    ).fetchone()
+
+    if user is None:
+        raise unauthorized
+
+    return {
+        "user_id": user[0],
+        "full_name": user[1],
+        "email": user[2],
+    }
 
 class AppointmentSlotRequest(BaseModel):
     doctor_id: int = Field(gt=0)
     appointment_date: str
     appointment_time: str
 
+
 class MedicalQuestionRequest(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
     top_k: int = Field(default=3, ge=1, le=10)
+    triage_answers: dict[str, str] = Field(default_factory=dict)
+
 
 class AppointmentBookingRequest(BaseModel):
     slot_id: int = Field(gt=0)
@@ -218,6 +258,12 @@ def login_endpoint(
         "user": user,
     }
 
+@app.get("/auth/me", tags=["Authentication"])
+def get_logged_in_user(
+    current_user: dict = Depends(get_current_user),
+):
+    """Return the currently authenticated user."""
+    return current_user
 
 @app.get("/doctors", tags=["Doctors"])
 def search_doctors_endpoint(
@@ -407,7 +453,10 @@ def cancel_appointment_endpoint(
 
 
 @app.post("/medical/ask", tags=["Medical Q&A"])
-def ask_medical_question(request: MedicalQuestionRequest):
+def ask_medical_question(
+    request: MedicalQuestionRequest,
+    current_user: dict | None = Depends(get_optional_current_user),
+):
     """Answer a health-information question and measure processing time."""
     question = request.question.strip()
 
@@ -430,6 +479,8 @@ def ask_medical_question(request: MedicalQuestionRequest):
                 "top_k": request.top_k,
                 "medical_qa_service": app.state.medical_qa_service,
                 "db_path": str(DATABASE_PATH),
+                "triage_answers": request.triage_answers,
+                "user_id": current_user["user_id"] if current_user else None,
             }
         )
 

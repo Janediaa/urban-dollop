@@ -279,3 +279,46 @@ def test_only_one_of_two_proposals_for_same_slot_can_be_confirmed(db):
     assert slot_status == "booked"
     assert appointment_count == 1
     assert second_stored_proposal["status"] == "pending"
+
+
+def test_failed_confirmation_rolls_back_appointment_and_keeps_proposal_pending(
+    db,
+):
+    conn, slot_id = db
+
+    proposal = create_booking_proposal(
+        conn,
+        slot_id,
+        "Test Patient",
+        "test-contact",
+    )
+
+    # Simulate an unavailable slot before confirmation.
+    conn.execute(
+        """
+        UPDATE appointment_slots
+        SET status = 'booked'
+        WHERE slot_id = ?
+        """,
+        (slot_id,),
+    )
+    conn.commit()
+
+    with pytest.raises(ValueError, match="not available"):
+        confirm_booking_proposal(conn, proposal["proposal_id"])
+
+    stored_proposal = get_booking_proposal(
+        conn, proposal["proposal_id"]
+    )
+
+    appointment_count = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM appointments
+        WHERE slot_id = ?
+        """,
+        (slot_id,),
+    ).fetchone()[0]
+
+    assert stored_proposal["status"] == "pending"
+    assert appointment_count == 0

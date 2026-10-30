@@ -376,3 +376,220 @@ def test_create_slot_endpoint_is_disabled_outside_development(monkeypatch):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Endpoint not available."
+
+
+def test_medical_ask_requires_authentication():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/medical/ask",
+            json={"question": "Check my health insurance coverage"},
+        )
+
+    assert response.status_code == 401
+
+
+def test_authenticated_user_can_check_insurance_coverage(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "insurance_api_test.db"
+    setup_test_database(db_path)
+
+    # Make both the API and insurance agent use the temporary database.
+    monkeypatch.setattr(api, "DATABASE_PATH", db_path)
+
+    def override_get_db():
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setitem(
+        api.app.dependency_overrides,
+        api.get_db,
+        override_get_db,
+    )
+
+    try:
+        with TestClient(api.app) as client:
+            registration = client.post(
+                "/auth/register",
+                json={
+                    "full_name": "Insurance Test User",
+                    "email": "insurance-test@example.com",
+                    "password": "securepass123",
+                },
+            )
+            assert registration.status_code == 201
+
+            login = client.post(
+                "/auth/login",
+                json={
+                    "email": "insurance-test@example.com",
+                    "password": "securepass123",
+                },
+            )
+            assert login.status_code == 200
+
+            headers = {
+                "Authorization": (
+                    f"Bearer {login.json()['access_token']}"
+                )
+            }
+
+            conn = sqlite3.connect(db_path)
+            try:
+                user_id = conn.execute(
+                    "SELECT user_id FROM users WHERE email = ?",
+                    ("insurance-test@example.com",),
+                ).fetchone()[0]
+
+                conn.execute(
+                    """
+                    INSERT INTO insurance_policies (
+                        user_id, policy_number, insurer_name, plan_name,
+                        coverage_limit, deductible, copay_percentage,
+                        valid_from, valid_until,
+                        covered_services, excluded_services
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        "POLICY-TEST-001",
+                        "Test Insurer",
+                        "Basic Health Plan",
+                        500000,
+                        5000,
+                        10,
+                        "2026-01-01",
+                        "2026-12-31",
+                        '["consultation", "blood test"]',
+                        '["cosmetic surgery"]',
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            response = client.post(
+                "/medical/ask",
+                headers=headers,
+                json={
+                    "question": "Is consultation covered by my plan?"
+                },
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["intent"] == "insurance"
+        assert result["status"] == "covered"
+        assert result["policy_number"] == "POLICY-TEST-001"
+
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_user_cannot_access_another_users_insurance_policy(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "insurance_isolation_test.db"
+    setup_test_database(db_path)
+    monkeypatch.setattr(api, "DATABASE_PATH", db_path)
+
+    def override_get_db():
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setitem(
+        api.app.dependency_overrides,
+        api.get_db,
+        override_get_db,
+    )
+
+    try:
+        with TestClient(api.app) as client:
+            def register_and_login(name, email):
+                registration = client.post(
+                    "/auth/register",
+                    json={
+                        "full_name": name,
+                        "email": email,
+                        "password": "securepass123",
+                    },
+                )
+                assert registration.status_code == 201
+
+                login = client.post(
+                    "/auth/login",
+                    json={
+                        "email": email,
+                        "password": "securepass123",
+                    },
+                )
+                assert login.status_code == 200
+
+                return {
+                    "Authorization": (
+                        f"Bearer {login.json()['access_token']}"
+                    )
+                }
+
+            user_a_headers = register_and_login(
+                "Insurance User A", "insurance-a@example.com"
+            )
+            user_b_headers = register_and_login(
+                "Insurance User B", "insurance-b@example.com"
+            )
+
+            conn = sqlite3.connect(db_path)
+            try:
+                user_a_id = conn.execute(
+                    "SELECT user_id FROM users WHERE email = ?",
+                    ("insurance-a@example.com",),
+                ).fetchone()[0]
+
+                conn.execute(
+                    """
+                    INSERT INTO insurance_policies (
+                        user_id, policy_number, insurer_name, plan_name,
+                        covered_services, excluded_services
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_a_id,
+                        "PRIVATE-POLICY-A",
+                        "Test Insurer",
+                        "Private Plan",
+                        '["consultation"]',
+                        "[]",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            response = client.post(
+                "/medical/ask",
+                headers=user_b_headers,
+                json={
+                    "question": "Is consultation covered by my plan?"
+                },
+            )
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["intent"] == "insurance"
+        assert result["status"] == "unknown"
+        assert result["policy_number"] is None
+        assert "PRIVATE-POLICY-A" not in response.text
+
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
+

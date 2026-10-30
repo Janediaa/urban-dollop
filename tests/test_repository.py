@@ -9,6 +9,7 @@ from src.database.repository import (
     get_doctor_by_id,
     get_doctor_with_hospital,
     search_doctors,
+    search_hospitals,
 )
 
 
@@ -422,3 +423,61 @@ def test_get_doctor_count_returns_zero_when_no_doctors(repository_conn):
     count = get_doctor_count(repository_conn)
 
     assert count == 0
+
+
+def test_search_hospitals_returns_all_hospitals(repository_conn):
+    repository_conn.executemany(
+        """
+        INSERT INTO hospitals (hospital_name, city)
+        VALUES (?, ?)
+        """,
+        [
+            ("City Hospital", "Delhi"),
+            ("Metro Hospital", "Noida"),
+        ],
+    )
+
+    results = search_hospitals(repository_conn)
+
+    assert len(results) == 2
+    assert {hospital["hospital_name"] for hospital in results} == {
+        "City Hospital",
+        "Metro Hospital",
+    }
+
+
+def test_search_hospitals_filters_city_case_insensitively(
+    repository_conn,
+):
+    repository_conn.executemany(
+        """
+        INSERT INTO hospitals (hospital_name, city)
+        VALUES (?, ?)
+        """,
+        [
+            ("City Hospital", "Delhi"),
+            ("Metro Hospital", "Noida"),
+        ],
+    )
+
+    results = search_hospitals(repository_conn, city="dElHi")
+
+    assert len(results) == 1
+    assert results[0]["hospital_name"] == "City Hospital"
+    assert results[0]["city"] == "Delhi"
+
+
+def test_search_hospitals_returns_empty_list_when_city_not_found(
+    repository_conn,
+):
+    repository_conn.execute(
+        """
+        INSERT INTO hospitals (hospital_name, city)
+        VALUES (?, ?)
+        """,
+        ("City Hospital", "Delhi"),
+    )
+
+    results = search_hospitals(repository_conn, city="Mumbai")
+
+    assert results == []

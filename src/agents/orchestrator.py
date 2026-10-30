@@ -9,10 +9,13 @@ import uuid
 from langgraph.graph import END, START, StateGraph
 
 from src.services.doctor_service import find_doctors
+from src.services.hospital_service import find_hospitals
 from src.services.appointment_service import (
     get_available_slots,
     book_appointment,
 )
+from src.services.insurance_service import assess_service_coverage
+from src.database.connection import get_connection
 
 
 class HealthcareState(TypedDict, total=False):
@@ -24,6 +27,7 @@ class HealthcareState(TypedDict, total=False):
     db_path: str
     intent: str
     result: dict[str, Any]
+    triage_answers: dict[str, str]
     error: str
 
     # Appointment workflow
@@ -33,7 +37,7 @@ class HealthcareState(TypedDict, total=False):
     patient_contact: str
     confirmed: bool
     proposal_id: str
-    user_id: str
+    user_id: int
 
 
 def classify_intent(state: HealthcareState) -> dict:
@@ -49,9 +53,37 @@ def classify_intent(state: HealthcareState) -> dict:
 
     # Explicit symptom/urgency requests take priority over general Q&A.
     triage_terms = (
-        "symptom", "symptoms", "chest pain", "difficulty breathing",
-        "can't breathe", "cannot breathe", "emergency", "urgent medical",
+        "symptom",
+        "symptoms",
+        "chest pain",
+        "chest pressure",
+        "difficulty breathing",
+        "shortness of breath",
+        "can't breathe",
+        "cannot breathe",
+        "severe bleeding",
+        "unconscious",
+        "not breathing",
+        "signs of stroke",
+        "face drooping",
+        "sudden weakness",
+        "fever",
+        "cough",
+        "cold",
+        "sore throat",
+        "fatigue",
+        "rash",
+        "itchy skin",
+        "skin irritation",
+        "palpitations",
+        "heart racing",
+        "irregular heartbeat",
+        "frequent headaches",
+        "recurring headaches",
+        "numbness",
+        "tingling",
     )
+
     if any(term in question for term in triage_terms):
         return {"intent": "triage"}
 
@@ -197,6 +229,55 @@ def doctor_search_agent(state: HealthcareState) -> dict:
             ),
         }
     }
+
+
+def hospital_search_agent(state: HealthcareState) -> dict:
+    """Search hospitals using an optional city filter."""
+
+    question = state.get("question", "").strip()
+    if not question:
+        return {"error": "Question must not be empty."}
+
+    db_path = state.get("db_path")
+    if not db_path:
+        return {"error": "Database path is unavailable."}
+
+    city_match = re.search(
+        r"\b(?:in|at|near)\s+([a-zA-Z][a-zA-Z .'-]*?)(?="
+        r"\s+(?:with|under|below|less than|over|above|more than|"
+        r"and|who|having)\b|[,?.!]|$)",
+        question,
+        re.IGNORECASE,
+    )
+    city = city_match.group(1).strip() if city_match else None
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        hospitals = find_hospitals(conn, city=city)
+    except (TypeError, ValueError) as exc:
+        return {"error": str(exc)}
+    finally:
+        conn.close()
+
+    return {
+        "result": {
+            "intent": "hospital_search",
+            "count": len(hospitals),
+            "filters": {"city": city},
+            "hospitals": hospitals,
+            "message": (
+                f"Found {len(hospitals)} matching hospital(s)."
+                if hospitals
+                else (
+                    "No hospitals matched those filters. "
+                    "Try another city or broaden your search."
+                )
+            ),
+        }
+    }
+
 
 
 
@@ -384,6 +465,336 @@ def appointment_agent(state: HealthcareState) -> dict:
         conn.close()
 
 
+def triage_agent(state: HealthcareState) -> dict:
+    """Provide cautious symptom guidance and optional doctor recommendations."""
+
+    question = state.get("question", "").strip()
+    question_lower = question.lower()
+
+    if not question:
+        return {"error": "Question must not be empty."}
+
+    emergency_terms = (
+        "chest pain",
+        "chest pressure",
+        "difficulty breathing",
+        "shortness of breath",
+        "can't breathe",
+        "cannot breathe",
+        "severe bleeding",
+        "unconscious",
+        "not breathing",
+        "signs of stroke",
+        "face drooping",
+        "sudden weakness",
+    )
+
+    if any(term in question_lower for term in emergency_terms):
+        return {
+            "result": {
+                "intent": "triage",
+                "urgency_level": "emergency",
+                "requires_emergency_care": True,
+                "possible_specialty": None,
+                "location": None,
+                "recommended_doctors": [],
+                "message": (
+                    "Your symptoms may indicate a medical emergency. "
+                    "Call your local emergency number or seek emergency "
+                    "medical care now. Do not delay care while searching "
+                    "for a doctor. This system cannot diagnose your condition."
+                ),
+                "requires_human_review": True,
+            }
+        }
+
+    specialty_rules = {
+        "cardiologist": (
+            "palpitations",
+            "heart racing",
+            "irregular heartbeat",
+        ),
+        "dermatologist": (
+            "rash",
+            "itchy skin",
+            "skin irritation",
+        ),
+        "neurologist": (
+            "frequent headaches",
+            "recurring headaches",
+            "numbness",
+            "tingling",
+        ),
+        "general physician": (
+            "fever",
+            "cough",
+            "cold",
+            "sore throat",
+            "fatigue",
+        ),
+    }
+
+    possible_specialty = next(
+        (
+            specialty
+            for specialty, terms in specialty_rules.items()
+            if any(term in question_lower for term in terms)
+        ),
+        None,
+    )
+
+    city_match = re.search(
+        r"\b(?:in|at|near)\s+([a-zA-Z][a-zA-Z .'-]*?)(?="
+        r"\s+(?:with|under|below|less than|over|above|more than|"
+        r"and|who|having)\b|[,?.!]|$)",
+        question,
+        re.IGNORECASE,
+    )
+    city = city_match.group(1).strip() if city_match else None
+
+    recommended_doctors = []
+
+    db_path = state.get("db_path")
+
+    if possible_specialty and city and db_path:
+        doctor_type = (
+            "physician"
+            if possible_specialty == "general physician"
+            else possible_specialty
+        )
+
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+
+        try:
+            recommended_doctors = find_doctors(
+                conn,
+                city=city,
+                doctor_type=doctor_type,
+            )[:3]
+        finally:
+            conn.close()
+
+    
+    follow_up_questions = []
+
+    if possible_specialty == "general physician":
+        if "fever" in question_lower:
+            follow_up_questions.extend([
+                "How long have you had the fever?",
+                "Have you measured your temperature? If yes, what was it?",
+            ])
+
+        if "cough" in question_lower:
+            follow_up_questions.append(
+                "How long have you had the cough, and is it getting worse?"
+            )
+
+        follow_up_questions.append(
+            "Are you experiencing any severe or rapidly worsening symptoms?"
+        )
+
+    elif possible_specialty == "dermatologist":
+        follow_up_questions = [
+            "When did the skin symptoms start?",
+            "Is the rash spreading, painful, or accompanied by fever?",
+        ]
+
+    elif possible_specialty == "neurologist":
+        follow_up_questions = [
+            "When did the symptoms start, and how often do they occur?",
+            "Are the symptoms sudden, severe, or getting worse?",
+        ]
+
+    elif possible_specialty == "cardiologist":
+        follow_up_questions = [
+            "When did the symptoms start, and how long do they last?",
+            "Are you experiencing chest pain, difficulty breathing, "
+            "fainting, or sudden weakness?",
+        ]
+
+    reported_symptoms = [
+        symptom
+        for symptom in (
+            "fever",
+            "cough",
+            "cold",
+            "sore throat",
+            "fatigue",
+            "rash",
+            "itchy skin",
+            "skin irritation",
+            "palpitations",
+            "heart racing",
+            "irregular heartbeat",
+            "frequent headaches",
+            "recurring headaches",
+            "numbness",
+            "tingling",
+        )
+        if symptom in question_lower
+    ]
+
+    
+    
+    triage_answers = state.get("triage_answers") or {}
+
+    duration = str(triage_answers.get("duration") or "").strip()
+    severity = str(triage_answers.get("severity") or "").strip()
+    progression = str(triage_answers.get("progression") or "").strip()
+
+    worsening_warning = progression.lower() in {
+        "worsening",
+        "getting worse",
+        "rapidly worsening",
+    }
+
+    severe_warning = severity.lower() in {
+        "severe",
+        "very severe",
+    }
+
+    answered_fields = {
+        "duration": duration,
+        "severity": severity,
+        "progression": progression,
+    }
+
+    unanswered_fields = [
+        field
+        for field, value in answered_fields.items()
+        if not value
+    ]
+
+
+    return {
+        "result": {
+            "intent": "triage",
+            "urgency_level": "undetermined",
+            "requires_emergency_care": False,
+            "possible_specialty": possible_specialty,
+            "location": city,
+            "recommended_doctors": recommended_doctors,
+            "follow_up_questions": follow_up_questions,
+                        
+            "summary": {
+                "reported_symptoms": reported_symptoms,
+                "duration": duration or None,
+                "severity": severity or None,
+                "progression": progression or None,
+                "unanswered_fields": unanswered_fields,
+                "unanswered_questions": [
+                    question
+                    for field, question in (
+                        (
+                            "duration",
+                            "How long have you had these symptoms?",
+                        ),
+                        (
+                            "severity",
+                            "How severe are the symptoms?",
+                        ),
+                        (
+                            "progression",
+                            "Are the symptoms getting better, staying the same, or getting worse?",
+                        ),
+                    )
+                    if field in unanswered_fields
+                ],
+            },
+
+            
+            
+            
+            "message": (
+                "You reported severe or worsening symptoms. Seek prompt "
+                "medical assessment. If symptoms are rapidly worsening, "
+                "you have trouble breathing, chest pain, fainting, or "
+                "another potentially life-threatening symptom, seek "
+                "emergency care now. Do not wait for this tool."
+                if worsening_warning or severe_warning
+                else
+                "This is initial guidance, not a diagnosis. The available "
+                "information is insufficient to reliably determine "
+                "urgency. Seek professional medical advice, and seek "
+                "emergency care immediately if severe or rapidly "
+                "worsening symptoms occur."
+            ),
+
+
+
+            "requires_human_review": True,
+        }
+    }
+
+
+def insurance_agent(state: HealthcareState) -> dict:
+    """Assess a service against the authenticated user's stored policy."""
+
+    question = state.get("question", "").strip()
+    user_id = state.get("user_id")
+    db_path = state.get("db_path")
+
+    if not question:
+        return {"error": "Question must not be empty."}
+
+    if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
+        return {"error": "A valid authenticated user is required for insurance queries."}
+
+    if not db_path:
+        return {"error": "Database path is unavailable."}
+
+    # Extract the service being asked about from common question patterns.
+    import re
+
+    patterns = (
+        r"\bis\s+(.+?)\s+covered\b",
+        r"\bdoes\s+my\s+(?:insurance|plan|policy)\s+cover\s+(.+?)[?.!]*$",
+        r"\bcoverage\s+for\s+(.+?)[?.!]*$",
+        r"\bwill\s+my\s+(?:insurance|plan|policy)\s+cover\s+(.+?)[?.!]*$",
+    )
+
+    service_name = None
+    for pattern in patterns:
+        match = re.search(pattern, question, re.IGNORECASE)
+        if match:
+            service_name = match.group(1).strip(" ?.!").strip()
+            break
+
+    if not service_name:
+        return {
+            "result": {
+                "intent": "insurance",
+                "status": "unknown",
+                "message": (
+                    "Please name the medical service you want to check, "
+                    "for example: 'Is consultation covered by my plan?'"
+                ),
+            }
+        }
+
+    conn = get_connection(db_path)
+    try:
+        assessment = assess_service_coverage(
+            conn,
+            user_id=user_id,
+            service_name=service_name,
+        )
+    except (TypeError, ValueError) as exc:
+        return {"error": str(exc)}
+    finally:
+        conn.close()
+
+    return {
+        "result": {
+            "intent": "insurance",
+            "service_name": service_name,
+            **assessment,
+        }
+    }
+
+
+
 def not_implemented_agent(state: HealthcareState) -> dict:
     """Clearly report workflows that have not been implemented yet."""
 
@@ -407,6 +818,9 @@ def build_healthcare_graph():
     graph.add_node("doctor_search_agent", doctor_search_agent)
     graph.add_node("not_implemented_agent", not_implemented_agent)
     graph.add_node("appointment_agent", appointment_agent)
+    graph.add_node("hospital_search_agent", hospital_search_agent)
+    graph.add_node("triage_agent", triage_agent)
+    graph.add_node("insurance_agent", insurance_agent)
 
     graph.add_edge(START, "classify_intent")
 
@@ -418,8 +832,14 @@ def build_healthcare_graph():
             return "medical"
         if intent == "doctor_search":
             return "doctor"
+        if intent == "hospital_search":
+            return "hospital"
         if intent == "appointment":
             return "appointment"
+        if intent == "triage":
+            return "triage"
+        if intent == "insurance":
+            return "insurance"
         return "other"
 
     graph.add_conditional_edges(
@@ -428,7 +848,10 @@ def build_healthcare_graph():
         {
             "medical": "medical_rag_agent",
             "doctor": "doctor_search_agent",
+            "hospital": "hospital_search_agent",
             "appointment": "appointment_agent",
+            "triage": "triage_agent",
+            "insurance": "insurance_agent",
             "other": "not_implemented_agent",
             "end": END,
         },
@@ -436,7 +859,11 @@ def build_healthcare_graph():
 
     graph.add_edge("medical_rag_agent", END)
     graph.add_edge("doctor_search_agent", END)
+    graph.add_edge("hospital_search_agent", END)
     graph.add_edge("not_implemented_agent", END)
     graph.add_edge("appointment_agent", END)
+    graph.add_edge("triage_agent", END)
+    graph.add_edge("insurance_agent", END)
+    
 
     return graph.compile()

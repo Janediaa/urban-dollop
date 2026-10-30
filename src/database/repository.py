@@ -133,3 +133,31 @@ def get_doctor_count(conn):
     return conn.execute(
         "SELECT COUNT(*) FROM doctors"
     ).fetchone()[0]
+
+
+def search_hospitals(conn, city=None):
+    """Search hospitals, optionally filtering by city."""
+
+    query = """
+        SELECT
+            hospital_id,
+            hospital_name,
+            city
+        FROM hospitals
+        WHERE 1=1
+    """
+    params = []
+
+    if city is not None and city.strip():
+        query += " AND LOWER(city) = LOWER(?)"
+        params.append(city.strip())
+
+    query += " ORDER BY hospital_name ASC, city ASC"
+
+    cursor = conn.execute(query, params)
+    columns = [column[0] for column in cursor.description]
+
+    return [
+        dict(zip(columns, row))
+        for row in cursor.fetchall()
+    ]

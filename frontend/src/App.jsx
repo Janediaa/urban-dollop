@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 const navItems = [
@@ -13,7 +13,46 @@ function App() {
   const [activePage, setActivePage] = useState('overview')
   const [authMode, setAuthMode] = useState('login')
   const [authUser, setAuthUser] = useState(null)
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [authToken, setAuthToken] = useState('')
+  const [authChecking, setAuthChecking] = useState(true)
+
+  useEffect(() => {
+    const savedToken = localStorage.getItem('healthcare_auth_token')
+
+    if (!savedToken) {
+      setAuthChecking(false)
+      return
+    }
+
+    async function restoreSession() {
+      try {
+        const response = await fetch('/auth/me', {
+          headers: {
+            Authorization: `Bearer ${savedToken}`,
+          },
+        })
+
+        if (!response.ok) {
+          localStorage.removeItem('healthcare_auth_token')
+          setAuthToken('')
+          setAuthUser(null)
+          return
+        }
+
+        const user = await response.json()
+        setAuthToken(savedToken)
+        setAuthUser(user)
+      } catch {
+        // Keep the saved token if the server is temporarily unavailable.
+        // A later refresh can retry session restoration.
+      } finally {
+        setAuthChecking(false)
+      }
+    }
+
+    restoreSession()
+  }, [])
   const [authName, setAuthName] = useState('')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
@@ -22,10 +61,19 @@ function App() {
   const [authMessage, setAuthMessage] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
 
+
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
   const [asking, setAsking] = useState(false)
   const [medicalError, setMedicalError] = useState('')
+
+  const [triageAnswers, setTriageAnswers] = useState({
+    duration: '',
+    severity: '',
+    progression: '',
+  })
+  const [triageQuestion, setTriageQuestion] = useState('')
+
 
   const [city, setCity] = useState('')
   const [specialty, setSpecialty] = useState('')
@@ -48,121 +96,209 @@ function App() {
   const [bookingReference, setBookingReference] = useState('')
   const [lookupResult, setLookupResult] = useState(null)
 
-  
-async function submitAuth(event) {
-  event.preventDefault()
-  setAuthError('')
-  setAuthMessage('')
-  setAuthLoading(true)
 
-  const isRegistering = authMode === 'register'
+  async function submitAuth(event) {
+    event.preventDefault()
+    setAuthError('')
+    setAuthMessage('')
+    setAuthLoading(true)
 
-  try {
-    if (isRegistering) {
-      const registerResponse = await fetch('/auth/register', {
+    const isRegistering = authMode === 'register'
+
+    try {
+      if (isRegistering) {
+        const registerResponse = await fetch('/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: authName.trim(),
+            email: authEmail.trim(),
+            password: authPassword,
+          }),
+        })
+
+
+
+        const registerData = await registerResponse.json()
+
+        if (!registerResponse.ok) {
+          throw new Error(
+            typeof registerData.detail === 'string'
+              ? registerData.detail
+              : 'Unable to create your account.'
+          )
+        }
+
+        setAuthMessage('Account created successfully. Please sign in.')
+        setAuthError('')
+        setAuthMode('login')
+        setAuthPassword('')
+        setShowPassword(false)
+        return
+      }
+
+
+
+      const response = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          full_name: authName.trim(),
           email: authEmail.trim(),
           password: authPassword,
         }),
       })
 
-      
-      
-      const registerData = await registerResponse.json()
+      const data = await response.json()
 
-      if (!registerResponse.ok) {
+      if (!response.ok) {
         throw new Error(
-          typeof registerData.detail === 'string'
-            ? registerData.detail
-            : 'Unable to create your account.'
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Unable to sign in.'
         )
       }
 
-      setAuthMessage('Account created successfully. Please sign in.')
-      setAuthError('')
-      setAuthMode('login')
+      localStorage.setItem('healthcare_auth_token', data.access_token)
+      setAuthToken(data.access_token)
+      setAuthUser(data.user)
+      setActivePage('overview')
       setAuthPassword('')
-      setShowPassword(false)
-      return
-    }
-
-
-
-    const response = await fetch('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: authEmail.trim(),
-        password: authPassword,
-      }),
-    })
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        typeof data.detail === 'string'
-          ? data.detail
-          : 'Unable to sign in.'
+      setAuthMessage(
+        isRegistering ? 'Account created successfully.' : 'Signed in successfully.'
       )
+    } catch (error) {
+      setAuthError(error.message)
+    } finally {
+      setAuthLoading(false)
     }
-
-    setAuthToken(data.access_token)
-    setAuthUser(data.user)
-    setActivePage('overview')
-    setAuthPassword('')
-    setAuthMessage(
-      isRegistering ? 'Account created successfully.' : 'Signed in successfully.'
-    )
-  } catch (error) {
-    setAuthError(error.message)
-  } finally {
-    setAuthLoading(false)
   }
-}
 
-function logOut() {
-  setAuthToken('')
-  setAuthUser(null)
-  setAuthPassword('')
-  setAuthMessage('')
-  setAuthError('')
-  setBooking(null)
-  setLookupResult(null)
-  setBookingReference('')
-}
 
-function authHeaders() {
-  return authToken
-    ? { Authorization: `Bearer ${authToken}` }
-    : {}
-}
+
+  function logOut() {
+    setShowLogoutModal(true)
+  }
+
+  function confirmLogout() {
+    localStorage.removeItem('healthcare_auth_token')
+    setAuthToken('')
+    setAuthUser(null)
+    setAuthPassword('')
+    setAuthMessage('')
+    setAuthError('')
+    setBooking(null)
+    setLookupResult(null)
+    setBookingReference('')
+    setShowLogoutModal(false)
+  }
+
+
+  function authHeaders() {
+    return authToken
+      ? { Authorization: `Bearer ${authToken}` }
+      : {}
+  }
+
 
 
   async function askMedicalQuestion(event) {
     event.preventDefault()
+
+    const submittedQuestion = question.trim()
+    if (submittedQuestion.length < 3) return
+
     setAsking(true)
     setAnswer(null)
+    setMedicalError('')
+    setTriageQuestion('')
+    setTriageAnswers({
+      duration: '',
+      severity: '',
+      progression: '',
+    })
+
+    try {
+      const response = await fetch('/medical/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders(),
+        },
+        body: JSON.stringify({
+          question: submittedQuestion,
+          top_k: 3,
+          triage_answers: {},
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Unable to answer your question.'
+        )
+      }
+
+      setAnswer(data)
+
+      if (data.intent === 'triage') {
+        setTriageQuestion(submittedQuestion)
+      }
+    } catch (error) {
+      setMedicalError(error.message || 'Something went wrong.')
+    } finally {
+      setAsking(false)
+    }
+  }
+
+
+  async function submitTriageAnswers(event) {
+    event.preventDefault()
+
+    if (!triageQuestion || !answer || answer.intent !== 'triage') {
+      setMedicalError('Please submit your symptoms first.')
+      return
+    }
+
+    setAsking(true)
     setMedicalError('')
 
     try {
       const response = await fetch('/medical/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, top_k: 3 }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders(),
+        },
+        body: JSON.stringify({
+          question: triageQuestion,
+          top_k: 3,
+          triage_answers: triageAnswers,
+        }),
       })
+
       const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Unable to answer your question.')
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Unable to update the triage summary.'
+        )
+      }
+
       setAnswer(data)
     } catch (error) {
-      setMedicalError(error.message)
+      setMedicalError(
+        error.message || 'Unable to submit your answers.'
+      )
     } finally {
       setAsking(false)
     }
   }
+
 
   async function searchDoctors(event) {
     event?.preventDefault()
@@ -250,315 +386,316 @@ function authHeaders() {
     setSlots(data.slots || [])
   }
 
-  
-async function bookAppointment(event) {
-  event.preventDefault()
-  setBooking(null)
-  setBookingError('')
 
-  if (!authToken || !authUser) {
-    setBookingError('Please sign in before booking an appointment.')
-    setAuthMode('login')
-    setActivePage('auth')
-    return
-  }
+  async function bookAppointment(event) {
+    event.preventDefault()
+    setBooking(null)
+    setBookingError('')
 
-  if (!selectedSlot || !patientName.trim() || !patientContact.trim()) {
-    setBookingError('Please complete all appointment details.')
-    return
-  }
-
-  try {
-    const response = await fetch('/appointments/proposals', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-      },
-      body: JSON.stringify({
-        slot_id: Number(selectedSlot),
-        patient_name: patientName.trim(),
-        patient_contact: patientContact.trim(),
-      }),
-    })
-
-    const proposal = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        typeof proposal.detail === 'string'
-          ? proposal.detail
-          : 'Unable to create booking proposal.'
-      )
+    if (!authToken || !authUser) {
+      setBookingError('Please sign in before booking an appointment.')
+      setAuthMode('login')
+      setActivePage('auth')
+      return
     }
 
-    setBooking({
-      ...proposal,
-      status: 'proposal_created',
-      message: 'Review the proposal and explicitly confirm to complete your booking.',
-    })
-  } catch (error) {
-    setBookingError(error.message)
-  }
-}
-
-  
-async function confirmBookingProposal() {
-  if (!authToken || !authUser) {
-    setBookingError('Please sign in before confirming a booking.')
-    setAuthMode('login')
-    setActivePage('auth')
-    return
-  }
-
-  const proposalId = booking?.proposal_id
-
-  if (!proposalId) {
-    setBookingError('No valid booking proposal is available to confirm.')
-    return
-  }
-
-  setBookingError('')
-
-  try {
-    const response = await fetch('/appointments/proposals/confirm', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-      },
-      body: JSON.stringify({ proposal_id: proposalId }),
-    })
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        typeof data.detail === 'string'
-          ? data.detail
-          : 'Unable to confirm the booking.'
-      )
+    if (!selectedSlot || !patientName.trim() || !patientContact.trim()) {
+      setBookingError('Please complete all appointment details.')
+      return
     }
 
-    setBooking({
-      ...data,
-      status: 'confirmed',
-      message: 'Your appointment has been confirmed.',
-    })
-
-    const reference = data.booking_reference || data.reference
-
-    if (reference) {
-      setBookingReference(reference)
-    }
-
-    await loadSlotsForCurrentDate()
-  } catch (error) {
-    setBookingError(error.message)
-  }
-}
-
-  
-async function lookUpAppointment(event) {
-  event.preventDefault()
-  setLookupResult(null)
-  setBookingError('')
-
-  if (!authToken || !authUser) {
-    setBookingError('Please sign in to look up your appointments.')
-    setAuthMode('login')
-    setActivePage('auth')
-    return
-  }
-
-  if (!bookingReference.trim()) {
-    setBookingError('Enter a booking reference.')
-    return
-  }
-
-  try {
-    const response = await fetch(
-      `/appointments/${encodeURIComponent(bookingReference.trim())}`,
-      {
-        headers: { ...authHeaders() },
-      }
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        typeof data.detail === 'string'
-          ? data.detail
-          : 'Appointment not found.'
-      )
-    }
-
-    setLookupResult(data)
-  } catch (error) {
-    setBookingError(error.message)
-  }
-}
-
-  
-
-async function cancelExistingAppointment() {
-  if (!authToken || !authUser) {
-    setBookingError('Please sign in to cancel an appointment.')
-    setAuthMode('login')
-    setActivePage('auth')
-    return
-  }
-
-  if (!bookingReference.trim()) return
-
-  const confirmed = window.confirm(
-    'Are you sure you want to cancel this appointment?'
-  )
-
-  if (!confirmed) return
-
-  setBookingError('')
-
-  try {
-    const response = await fetch(
-      `/appointments/${encodeURIComponent(bookingReference.trim())}/cancel`,
-      {
+    try {
+      const response = await fetch('/appointments/proposals', {
         method: 'POST',
-        headers: { ...authHeaders() },
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders(),
+        },
+        body: JSON.stringify({
+          slot_id: Number(selectedSlot),
+          patient_name: patientName.trim(),
+          patient_contact: patientContact.trim(),
+        }),
+      })
+
+      const proposal = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          typeof proposal.detail === 'string'
+            ? proposal.detail
+            : 'Unable to create booking proposal.'
+        )
       }
-    )
 
-    const data = await response.json()
+      setBooking({
+        ...proposal,
+        status: 'proposal_created',
+        message: 'Review the proposal and explicitly confirm to complete your booking.',
+      })
+    } catch (error) {
+      setBookingError(error.message)
+    }
+  }
 
-    if (!response.ok) {
-      throw new Error(
-        typeof data.detail === 'string'
-          ? data.detail
-          : 'Unable to cancel appointment.'
-      )
+
+  async function confirmBookingProposal() {
+    if (!authToken || !authUser) {
+      setBookingError('Please sign in before confirming a booking.')
+      setAuthMode('login')
+      setActivePage('auth')
+      return
     }
 
-    setLookupResult(data)
-  } catch (error) {
-    setBookingError(error.message)
+    const proposalId = booking?.proposal_id
+
+    if (!proposalId) {
+      setBookingError('No valid booking proposal is available to confirm.')
+      return
+    }
+
+    setBookingError('')
+
+    try {
+      const response = await fetch('/appointments/proposals/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders(),
+        },
+        body: JSON.stringify({ proposal_id: proposalId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Unable to confirm the booking.'
+        )
+      }
+
+      setBooking({
+        ...data,
+        status: 'confirmed',
+        message: 'Your appointment has been confirmed.',
+      })
+
+      const reference = data.booking_reference || data.reference
+
+      if (reference) {
+        setBookingReference(reference)
+      }
+
+      await loadSlotsForCurrentDate()
+    } catch (error) {
+      setBookingError(error.message)
+    }
   }
-}
 
-  
-function renderAuthPage() {
-  return (
-    <div className="two-column">
-      <section className="panel">
-        <span className="eyebrow">PATIENT ACCOUNT</span>
-        <h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2>
-        <p>
-          {authMode === 'register'
-            ? 'Register to manage your appointments securely.'
-            : 'Sign in to book and manage your appointments.'}
-        </p>
 
-        <form className="stack-form" onSubmit={submitAuth}>
-          {authMode === 'register' && (
+  async function lookUpAppointment(event) {
+    event.preventDefault()
+    setLookupResult(null)
+    setBookingError('')
+
+    if (!authToken || !authUser) {
+      setBookingError('Please sign in to look up your appointments.')
+      setAuthMode('login')
+      setActivePage('auth')
+      return
+    }
+
+    if (!bookingReference.trim()) {
+      setBookingError('Enter a booking reference.')
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `/appointments/${encodeURIComponent(bookingReference.trim())}`,
+        {
+          headers: { ...authHeaders() },
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Appointment not found.'
+        )
+      }
+
+      setLookupResult(data)
+    } catch (error) {
+      setBookingError(error.message)
+    }
+  }
+
+
+
+  async function cancelExistingAppointment() {
+    if (!authToken || !authUser) {
+      setBookingError('Please sign in to cancel an appointment.')
+      setAuthMode('login')
+      setActivePage('auth')
+      return
+    }
+
+    if (!bookingReference.trim()) return
+
+    const confirmed = window.confirm(
+      'Are you sure you want to cancel this appointment?'
+    )
+
+    if (!confirmed) return
+
+    setBookingError('')
+
+    try {
+      const response = await fetch(
+        `/appointments/${encodeURIComponent(bookingReference.trim())}/cancel`,
+        {
+          method: 'POST',
+          headers: { ...authHeaders() },
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Unable to cancel appointment.'
+        )
+      }
+
+      setLookupResult(data)
+    } catch (error) {
+      setBookingError(error.message)
+    }
+  }
+
+
+  function renderAuthPage() {
+    return (
+      <div className="two-column">
+        <section className="panel triage-summary">
+          <span className="eyebrow">PATIENT ACCOUNT</span>
+          <h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2>
+          <p>
+            {authMode === 'register'
+              ? 'Register to manage your appointments securely.'
+              : 'Sign in to book and manage your appointments.'}
+          </p>
+
+          <form className="stack-form" onSubmit={submitAuth}>
+            {authMode === 'register' && (
+              <div className="field">
+                <label htmlFor="authName">Full name</label>
+                <input
+                  id="authName"
+                  value={authName}
+                  onChange={(event) => setAuthName(event.target.value)}
+                  maxLength={100}
+                  required
+                />
+              </div>
+            )}
+
             <div className="field">
-              <label htmlFor="authName">Full name</label>
+              <label htmlFor="authEmail">Email address</label>
               <input
-                id="authName"
-                value={authName}
-                onChange={(event) => setAuthName(event.target.value)}
-                maxLength={100}
+                id="authEmail"
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                maxLength={254}
                 required
               />
             </div>
-          )}
 
-          <div className="field">
-            <label htmlFor="authEmail">Email address</label>
-            <input
-              id="authEmail"
-              type="email"
-              value={authEmail}
-              onChange={(event) => setAuthEmail(event.target.value)}
-              maxLength={254}
-              required
-            />
+
+            <div className="field">
+              <label htmlFor="authPassword">Password</label>
+
+              <div className="password-input-wrapper">
+                <input
+                  id="authPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  minLength={authMode === 'register' ? 8 : 1}
+                  maxLength={128}
+                  required
+                />
+
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((previous) => !previous)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+
+
+            {authError && <div className="error-box">{authError}</div>}
+            {authMessage && <div className="inline-message">{authMessage}</div>}
+
+            <button type="submit" disabled={authLoading}>
+              {authLoading
+                ? 'Please wait...'
+                : authMode === 'register'
+                  ? 'Create account'
+                  : 'Sign in'}
+            </button>
+          </form>
+
+          <div className="form-footer">
+            {authMode === 'register'
+              ? 'Already have an account?'
+              : 'New to Healthcare Navigator?'}
+            {' '}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setAuthMode(authMode === 'register' ? 'login' : 'register')
+                setAuthError('')
+                setAuthMessage('')
+              }}
+            >
+              {authMode === 'register' ? 'Sign in' : 'Create an account'}
+            </button>
           </div>
+        </section>
 
-          
-<div className="field">
-  <label htmlFor="authPassword">Password</label>
-
-  <div className="password-input-wrapper">
-    <input
-      id="authPassword"
-      type={showPassword ? 'text' : 'password'}
-      value={authPassword}
-      onChange={(event) => setAuthPassword(event.target.value)}
-      minLength={authMode === 'register' ? 8 : 1}
-      maxLength={128}
-      required
-    />
-
-    <button
-      type="button"
-      className="password-toggle"
-      onClick={() => setShowPassword((previous) => !previous)}
-      aria-label={showPassword ? 'Hide password' : 'Show password'}
-    >
-      {showPassword ? 'Hide' : 'Show'}
-    </button>
-  </div>
-</div>
-
-
-          {authError && <div className="error-box">{authError}</div>}
-          {authMessage && <div className="inline-message">{authMessage}</div>}
-
-          <button type="submit" disabled={authLoading}>
-            {authLoading
-              ? 'Please wait...'
-              : authMode === 'register'
-                ? 'Create account'
-                : 'Sign in'}
-          </button>
-        </form>
-
-        <div className="form-footer">
-          {authMode === 'register'
-            ? 'Already have an account?'
-            : 'New to Healthcare Navigator?'}
-          {' '}
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => {
-              setAuthMode(authMode === 'register' ? 'login' : 'register')
-              setAuthError('')
-              setAuthMessage('')
-            }}
-          >
-            {authMode === 'register' ? 'Sign in' : 'Create an account'}
-          </button>
-        </div>
-      </section>
-
-      <section className="panel">
-        <h3>Why sign in?</h3>
-        <p>Your account lets you:</p>
-        <ul>
-          <li>Create and confirm appointment bookings.</li>
-          <li>Look up your own bookings.</li>
-          <li>Cancel your confirmed appointments.</li>
-        </ul>
-        <p>Medical questions and doctor discovery remain available without signing in.</p>
-      </section>
-    </div>
-  )
-}
+        <section className="panel">
+          <h3>Why sign in?</h3>
+          <p>Your account lets you:</p>
+          <ul>
+            <li>Create and confirm appointment bookings.</li>
+            <li>Look up your own bookings.</li>
+            <li>Cancel your confirmed appointments.</li>
+          </ul>
+          <p>Medical questions and doctor discovery remain available without signing in.</p>
+        </section>
+      </div>
+    )
+  }
 
 
   function renderMedicalAnswer() {
-    if (!answer) return null
+    if (!answer || answer.intent === 'triage') return null
+
 
     const sources = Array.isArray(answer.sources) ? answer.sources : []
 
@@ -654,6 +791,33 @@ function renderAuthPage() {
           <h2>Ask Medical AI</h2>
           <p>Ask a health-information question. Answers are generated using your medical knowledge base and may not replace professional advice.</p>
         </div>
+        
+        <section className="emergency-help" aria-labelledby="emergency-help-title">
+          <div className="emergency-help-icon" aria-hidden="true">
+            <span>!</span>
+          </div>
+
+          <div className="emergency-help-copy">
+            <h3 id="emergency-help-title">Need emergency medical help?</h3>
+            <p>
+              Do not wait for an AI response if you may be experiencing a
+              medical emergency. Seek immediate medical attention.
+            </p>
+            <span className="emergency-help-note">
+              In India, call 112 for emergency assistance.
+            </span>
+          </div>
+
+          <a
+            className="emergency-help-button"
+            href="tel:112"
+            aria-label="Call India's emergency number 112"
+          >
+            Call 112
+            <span aria-hidden="true">↗</span>
+          </a>
+        </section>
+
         <form className="panel question-form" onSubmit={askMedicalQuestion}>
           <label htmlFor="question">What would you like to know?</label>
           <textarea
@@ -675,7 +839,150 @@ function renderAuthPage() {
         </form>
         {medicalError && <div className="error-box">{medicalError}</div>}
         {asking && <div className="loading-box">Searching the medical knowledge base and preparing an answer…</div>}
+
         {renderMedicalAnswer()}
+
+        {answer?.intent === 'triage' && answer?.summary && (
+          <section className="panel">
+            <h3>Pre-consultation summary</h3>
+
+            {answer.requires_emergency_care ? (
+              <div className="error-box" role="alert">
+                <strong>Emergency guidance</strong>
+                <p>{answer.message}</p>
+              </div>
+            ) : (
+              <>
+                <p>
+                  <strong>Possible specialty:</strong>{' '}
+                  {answer.possible_specialty || 'Not determined'}
+                </p>
+
+                <p>
+                  <strong>Reported symptoms:</strong>{' '}
+                  {answer.summary.reported_symptoms?.join(', ') || 'Not specified'}
+                </p>
+
+                <p>
+                  <strong>Duration:</strong>{' '}
+                  {answer.summary.duration || 'Not provided'}
+                </p>
+
+                <p>
+                  <strong>Severity:</strong>{' '}
+                  {answer.summary.severity || 'Not provided'}
+                </p>
+
+                <p>
+                  <strong>Progression:</strong>{' '}
+                  {answer.summary.progression || 'Not provided'}
+                </p>
+
+
+                {triageQuestion && (
+                  <form
+                    className="question-form triage-followup-form"
+                    onSubmit={submitTriageAnswers}
+                  >
+                    <h4>Tell us a little more</h4>
+                    <p className="muted">
+                      These details help prepare your summary for a healthcare professional.
+                    </p>
+
+                    <label htmlFor="triage-duration">How long have you had these symptoms?</label>
+                    <input
+                      id="triage-duration"
+                      value={triageAnswers.duration}
+                      onChange={(event) =>
+                        setTriageAnswers((previous) => ({
+                          ...previous,
+                          duration: event.target.value,
+                        }))
+                      }
+                      placeholder="e.g. Since yesterday, about 3 days"
+                      maxLength={200}
+                    />
+
+                    <label htmlFor="triage-severity">How severe are the symptoms?</label>
+                    <select
+                      id="triage-severity"
+                      value={triageAnswers.severity}
+                      onChange={(event) =>
+                        setTriageAnswers((previous) => ({
+                          ...previous,
+                          severity: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Choose an option</option>
+                      <option value="mild">Mild</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="severe">Severe</option>
+                    </select>
+
+                    <label htmlFor="triage-progression">
+                      How are the symptoms changing?
+                    </label>
+                    <select
+                      id="triage-progression"
+                      value={triageAnswers.progression}
+                      onChange={(event) =>
+                        setTriageAnswers((previous) => ({
+                          ...previous,
+                          progression: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Choose an option</option>
+                      <option value="improving">Getting better</option>
+                      <option value="unchanged">Staying the same</option>
+                      <option value="worsening">Getting worse</option>
+                    </select>
+
+                    <div className="form-footer">
+                      <button type="submit" disabled={asking}>
+                        {asking ? 'Updating summary…' : 'Submit follow-up answers'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+
+                {answer.summary.unanswered_questions?.length > 0 && (
+                  <>
+                    <h4>Questions still to answer</h4>
+                    <ul>
+                      {answer.summary.unanswered_questions.map((item, index) => (
+                        <li key={`${item}-${index}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {answer.recommended_doctors?.length > 0 && (
+                  <>
+                    <h4>Suggested doctors</h4>
+                    <ul>
+                      {answer.recommended_doctors.map((doctor, index) => (
+                        <li key={doctor.doctor_id || doctor.composite_doctor_id || index}>
+                          {doctor.doctor_name || 'Doctor'}
+                          {doctor.doctor_type ? ` — ${doctor.doctor_type}` : ''}
+                          {doctor.city ? `, ${doctor.city}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            )}
+
+            <p className="muted">
+              This is preliminary guidance, not a diagnosis. A qualified healthcare
+              professional should assess your symptoms.
+            </p>
+          </section>
+        )}
+
       </>
     )
   }
@@ -753,20 +1060,20 @@ function renderAuthPage() {
           <p>Manage application-level appointment slots. These are not live hospital schedules.</p>
         </div>
         {!authUser && (
-  <div className="notice">
-    Please sign in to create bookings, look up appointments, or cancel them.
-    <button
-      type="button"
-      className="secondary-button"
-      onClick={() => {
-        setAuthMode('login')
-        setActivePage('auth')
-      }}
-    >
-      Sign in
-    </button>
-  </div>
-)}
+          <div className="notice">
+            Please sign in to create bookings, look up appointments, or cancel them.
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setAuthMode('login')
+                setActivePage('auth')
+              }}
+            >
+              Sign in
+            </button>
+          </div>
+        )}
         {authUser && <div className="two-column">
           <section className="panel">
             <h3>Find available slots</h3>
@@ -790,7 +1097,7 @@ function renderAuthPage() {
               </div>
               <button type="submit" className="secondary-button">Create slot</button>
             </form>
-          
+
 
             {slotError && <div className="inline-message">{slotError}</div>}
             {slots.length > 0 && (
@@ -833,37 +1140,37 @@ function renderAuthPage() {
               </button>
             </form>
 
-            
-{booking && (
-  <div className="success-box">
-    <h4>Booking response</h4>
 
-    <pre>{JSON.stringify(booking, null, 2)}</pre>
+            {booking && (
+              <div className="success-box">
+                <h4>Booking response</h4>
 
-    {booking.status === 'proposal_created' && (
-      <button
-        type="button"
-        onClick={confirmBookingProposal}
-      >
-        Explicitly confirm appointment
-      </button>
-    )}
+                <pre>{JSON.stringify(booking, null, 2)}</pre>
 
-    {(booking.booking_reference || booking.reference) && (
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={() =>
-          setBookingReference(
-            booking.booking_reference || booking.reference
-          )
-        }
-      >
-        Use reference for lookup
-      </button>
-    )}
-  </div>
-)}
+                {booking.status === 'proposal_created' && (
+                  <button
+                    type="button"
+                    onClick={confirmBookingProposal}
+                  >
+                    Explicitly confirm appointment
+                  </button>
+                )}
+
+                {(booking.booking_reference || booking.reference) && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      setBookingReference(
+                        booking.booking_reference || booking.reference
+                      )
+                    }
+                  >
+                    Use reference for lookup
+                  </button>
+                )}
+              </div>
+            )}
 
             <form className="stack-form lookup-form" onSubmit={lookUpAppointment}>
               <h4>Find an existing booking</h4>
@@ -874,7 +1181,7 @@ function renderAuthPage() {
               <button type="submit" className="secondary-button">Look up booking</button>
             </form>
 
-            
+
             {lookupResult && (
               <div className="success-box">
                 <h4>Booking details</h4>
@@ -893,7 +1200,7 @@ function renderAuthPage() {
               </div>
             )}
 
-                        {bookingError && (
+            {bookingError && (
               <div className="error-box">{bookingError}</div>
             )}
           </section>
@@ -911,14 +1218,20 @@ function renderAuthPage() {
     auth: 'Sign in',
   }
 
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">H+</span>
-          <div><strong>Healthcare</strong><span>Navigator</span></div>
+          <div>
+            <strong>Healthcare</strong>
+            <span>Navigator</span>
+          </div>
         </div>
+
         <div className="workspace-label">WORKSPACE</div>
+
         <nav className="nav-list">
           {navItems.map((item) => (
             <button
@@ -926,13 +1239,18 @@ function renderAuthPage() {
               className={`nav-item ${activePage === item.id ? 'active' : ''}`}
               onClick={() => setActivePage(item.id)}
             >
-              <span className="nav-icon">{item.icon}</span>{item.label}
+              <span className="nav-icon">{item.icon}</span>
+              {item.label}
             </button>
           ))}
         </nav>
+
         <div className="sidebar-bottom">
           <div className="status-dot" />
-          <div><strong>API connected</strong><span>Local development</span></div>
+          <div>
+            <strong>API connected</strong>
+            <span>Local development</span>
+          </div>
         </div>
       </aside>
 
@@ -942,36 +1260,38 @@ function renderAuthPage() {
             <span className="breadcrumb">Healthcare Navigator /</span>
             <strong>{pageTitles[activePage]}</strong>
           </div>
-          
-<div className="topbar-actions">
-  {authUser ? (
-    <>
-      <span>Signed in as {authUser.full_name}</span>
-      <button
-        type="button"
-        className="secondary-button"
-        onClick={logOut}
-      >
-        Sign out
-      </button>
-    </>
-  ) : (
-    <button
-      type="button"
-      className="secondary-button"
-      onClick={() => {
-        setAuthMode('login')
-        setAuthError('')
-        setAuthMessage('')
-        setActivePage('auth')
-      }}
-    >
-      Sign in
-    </button>
-  )}
-  <span className="environment-pill"><span /> DEVELOPMENT</span>
-</div>
 
+          <div className="topbar-actions">
+            {authUser ? (
+              <>
+                <span>Signed in as {authUser.full_name}</span>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={logOut}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setAuthMode('login')
+                  setAuthError('')
+                  setAuthMessage('')
+                  setActivePage('auth')
+                }}
+              >
+                Sign in
+              </button>
+            )}
+
+            <span className="environment-pill">
+              <span /> DEVELOPMENT
+            </span>
+          </div>
         </header>
 
         <div className="page-content">
@@ -981,8 +1301,46 @@ function renderAuthPage() {
           {activePage === 'appointments' && renderAppointmentsPage()}
           {activePage === 'auth' && renderAuthPage()}
         </div>
-        <footer className="footer">Healthcare Navigator · Prototype · For informational use only</footer>
+
+        <footer className="footer">
+          Healthcare Navigator · Prototype · For informational use only
+        </footer>
       </main>
+
+      {showLogoutModal && (
+        <div className="logout-modal-overlay">
+          <div
+            className="logout-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-modal-title"
+          >
+            <h2 id="logout-modal-title">Sign out?</h2>
+
+            <p>
+              Are you sure you want to sign out of your account?
+            </p>
+
+            <div className="logout-modal-actions">
+              <button
+                type="button"
+                className="logout-cancel-button"
+                onClick={() => setShowLogoutModal(false)}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="logout-confirm-button"
+                onClick={confirmLogout}
+              >
+                Yes, sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -102,6 +102,25 @@ def create_tables(conn : sqlite3.Connection) -> None:
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS insurance_policies (
+            policy_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            policy_number TEXT NOT NULL UNIQUE,
+            insurer_name TEXT NOT NULL,
+            plan_name TEXT NOT NULL,
+            coverage_limit REAL,
+            deductible REAL,
+            copay_percentage REAL,
+            valid_from TEXT,
+            valid_until TEXT,
+            covered_services TEXT NOT NULL DEFAULT '[]',
+            excluded_services TEXT NOT NULL DEFAULT '[]',
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+                ON DELETE CASCADE
+        )
+    """)
+
         # Safely add ownership columns to databases created by older versions.
     for table_name in ("appointments", "booking_proposals"):
         columns = {
