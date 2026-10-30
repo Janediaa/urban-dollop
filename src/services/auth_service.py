@@ -16,7 +16,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 password_hasher = PasswordHash.recommended()
 
@@ -94,7 +94,7 @@ def authenticate_user(
 
 
 def create_access_token(user_id: int) -> str:
-    """Create a signed JWT that expires after 30 minutes."""
+    """Create a signed JWT that expires after 24 hours."""
 
     if not JWT_SECRET_KEY:
         raise RuntimeError("JWT_SECRET_KEY is not configured")

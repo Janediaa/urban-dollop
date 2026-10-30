@@ -485,9 +485,18 @@ def ask_medical_question(
         )
 
         if "error" in graph_result:
+            error_message = graph_result["error"]
+
+            if "authenticated user is required" in error_message.lower():
+                raise HTTPException(
+                    status_code=401,
+                    detail="Authentication is required for insurance queries.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
             raise HTTPException(
                 status_code=422,
-                detail=graph_result["error"],
+                detail=error_message,
             )
 
         result = graph_result["result"]
