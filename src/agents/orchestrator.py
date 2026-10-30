@@ -25,6 +25,7 @@ class HealthcareState(TypedDict, total=False):
     top_k: int
     medical_qa_service: Any
     symptom_pipeline_service: Any
+    extracted_symptoms: list[dict[str, Any]]
     db_path: str
     intent: str
     result: dict[str, Any]
@@ -113,6 +114,35 @@ def classify_intent(state: HealthcareState) -> dict:
         "paediatrician", "physician", "surgeon",
     )):
         return {"intent": "doctor_search"}
+
+        # Only attempt semantic extraction when the user appears to
+    # be describing their own symptoms.
+    personal_symptom_patterns = (
+        r"\b(?:i feel|i am feeling|i've been feeling|"
+        r"i have been feeling|i am experiencing|"
+        r"i've been experiencing)\b",
+        r"\bmy\b.{1,60}\b(?:hurts?|aches?|aching|"
+        r"pounding|throbbing|swollen|itchy|numb|tingling)\b",
+    )
+
+    is_personal_symptom_report = any(
+        re.search(pattern, question)
+        for pattern in personal_symptom_patterns
+    )
+
+    if is_personal_symptom_report:
+        symptom_pipeline_service = state.get("symptom_pipeline_service")
+
+        if symptom_pipeline_service is not None:
+            extracted_symptoms = symptom_pipeline_service.extract_symptoms(
+                state.get("question", "").strip()
+            )
+
+            if extracted_symptoms:
+                return {
+                    "intent": "triage",
+                    "extracted_symptoms": extracted_symptoms,
+                }
 
     return {"intent": "medical_question"}
 
@@ -509,13 +539,16 @@ def triage_agent(state: HealthcareState) -> dict:
             }
         }
 
-    symptom_pipeline_service = state.get("symptom_pipeline_service")
+    extracted_symptoms = state.get("extracted_symptoms")
 
-    extracted_symptoms = (
-        symptom_pipeline_service.extract_symptoms(question)
-        if symptom_pipeline_service is not None
-        else []
-    )
+    if extracted_symptoms is None:
+        symptom_pipeline_service = state.get("symptom_pipeline_service")
+
+        extracted_symptoms = (
+            symptom_pipeline_service.extract_symptoms(question)
+            if symptom_pipeline_service is not None
+            else []
+        )
 
     specialty_rules = {
         "cardiologist": (

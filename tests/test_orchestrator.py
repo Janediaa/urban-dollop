@@ -19,11 +19,16 @@ class FakeMedicalQAService:
 class FakeSymptomPipelineService:
     """Test double for symptom extraction."""
 
-    def __init__(self):
+    def __init__(self, return_empty: bool = False):
         self.called_with = []
+        self.return_empty = return_empty
 
     def extract_symptoms(self, text: str) -> list[dict]:
         self.called_with.append(text)
+
+        if self.return_empty:
+            return []
+
         return [
             {
                 "symptom": "headache",
@@ -34,8 +39,7 @@ class FakeSymptomPipelineService:
                 "duration": None,
                 "evidence": text,
             }
-        ]
-    
+        ]    
 
 def make_test_database(path):
     conn = sqlite3.connect(path)
@@ -568,3 +572,37 @@ def test_emergency_triage_skips_symptom_extraction():
     assert triage["urgency_level"] == "emergency"
     assert triage["requires_emergency_care"] is True
     assert symptom_service.called_with == []
+
+def test_graph_routes_semantic_symptom_to_triage():
+    symptom_service = FakeSymptomPipelineService()
+
+    result = build_healthcare_graph().invoke({
+        "question": "My head has been pounding",
+        "symptom_pipeline_service": symptom_service,
+    })
+
+    assert result["intent"] == "triage"
+    assert symptom_service.called_with == [
+        "My head has been pounding"
+    ]
+    assert result["result"]["summary"]["extracted_symptoms"][0][
+        "symptom"
+    ] == "headache"
+
+def test_graph_keeps_general_symptom_question_in_medical_rag():
+    symptom_service = FakeSymptomPipelineService()
+    medical_service = FakeMedicalQAService()
+
+    result = build_healthcare_graph().invoke({
+        "question": "Why do people experience dizziness?",
+        "symptom_pipeline_service": symptom_service,
+        "medical_qa_service": medical_service,
+    })
+
+    assert result["intent"] == "medical_question"
+    assert result["result"]["answer"] == (
+        "Test answer for: Why do people experience dizziness?"
+    )
+    assert symptom_service.called_with == []
+
+
