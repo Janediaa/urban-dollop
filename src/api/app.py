@@ -17,6 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from contextlib import asynccontextmanager
 
 from src.services.medical_qa_service import MedicalQAService
+from src.services.symptom_extraction_service import SymptomExtractionService
+from src.services.symptom_pipeline_service import SymptomPipelineService
 
 from src.database.connection import get_connection
 from src.database.repository import get_doctor_with_hospital
@@ -54,20 +56,34 @@ APP_ENV = os.getenv("APP_ENV", "production").strip().lower()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database and shared AI resources at startup."""
+
     conn = get_connection(DATABASE_PATH)
+
     try:
         create_tables(conn)
     finally:
         conn.close()
 
+    # Initialize the medical QA service and load the embedding model once.
     app.state.medical_qa_service = MedicalQAService()
+
+    # Reuse the exact same embedding model for symptom extraction.
+    symptom_extraction_service = SymptomExtractionService(
+        model=app.state.medical_qa_service.model
+    )
+
+    # Build the complete symptom extraction pipeline.
+    app.state.symptom_pipeline_service = SymptomPipelineService(
+        concept_extractor=symptom_extraction_service.extract_concepts
+    )
+
     app.state.healthcare_graph = build_healthcare_graph()
 
     yield
 
     app.state.medical_qa_service = None
+    app.state.symptom_pipeline_service = None
     app.state.healthcare_graph = None
-
 app = FastAPI(
     title="Healthcare Navigator API",
     description=(
@@ -478,6 +494,7 @@ def ask_medical_question(
                 "question": question,
                 "top_k": request.top_k,
                 "medical_qa_service": app.state.medical_qa_service,
+                "symptom_pipeline_service": app.state.symptom_pipeline_service,
                 "db_path": str(DATABASE_PATH),
                 "triage_answers": request.triage_answers,
                 "user_id": current_user["user_id"] if current_user else None,

@@ -24,6 +24,7 @@ class HealthcareState(TypedDict, total=False):
     question: str
     top_k: int
     medical_qa_service: Any
+    symptom_pipeline_service: Any
     db_path: str
     intent: str
     result: dict[str, Any]
@@ -508,6 +509,14 @@ def triage_agent(state: HealthcareState) -> dict:
             }
         }
 
+    symptom_pipeline_service = state.get("symptom_pipeline_service")
+
+    extracted_symptoms = (
+        symptom_pipeline_service.extract_symptoms(question)
+        if symptom_pipeline_service is not None
+        else []
+    )
+
     specialty_rules = {
         "cardiologist": (
             "palpitations",
@@ -679,6 +688,7 @@ def triage_agent(state: HealthcareState) -> dict:
                         
             "summary": {
                 "reported_symptoms": reported_symptoms,
+                "extracted_symptoms": extracted_symptoms,
                 "duration": duration or None,
                 "severity": severity or None,
                 "progression": progression or None,

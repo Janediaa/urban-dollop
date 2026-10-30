@@ -122,3 +122,19 @@ def analyze_symptom_context(text: str) -> dict:
         "experiencer": experiencer,
         "resolution_status": resolution_status,
     }
+
+def analyze_symptom_contexts(evidence_records: list[dict]) -> list[dict]:
+    """Attach context information to each individual symptom evidence record."""
+
+    enriched_records = []
+
+    for record in evidence_records:
+        context = analyze_symptom_context(record["evidence"])
+
+        enriched_records.append({
+            **record,
+            **context,
+        })
+
+    return enriched_records
+

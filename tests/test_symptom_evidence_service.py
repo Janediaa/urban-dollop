@@ -71,3 +71,54 @@ def test_empty_input_returns_empty_list():
     service = SymptomEvidenceService()
 
     assert service.extract_evidence("") == []
+
+
+def test_semantic_extractor_detects_paraphrased_symptoms():
+    class FakeConceptExtractor:
+        def extract_concepts(self, text):
+            if "head has been pounding" in text.lower():
+                return ["headache"]
+            return []
+
+    extractor = FakeConceptExtractor()
+
+    service = SymptomEvidenceService(
+        concept_extractor=extractor.extract_concepts
+    )
+
+    result = service.extract_evidence(
+        "My head has been pounding since yesterday."
+    )
+
+    assert result == [
+        {
+            "symptom": "headache",
+            "evidence": "My head has been pounding since yesterday.",
+        }
+    ]
+
+
+def test_semantic_and_lexical_matches_are_deduplicated():
+    class FakeConceptExtractor:
+        def extract_concepts(self, text):
+            return ["headache", "fever"]
+
+    service = SymptomEvidenceService(
+        concept_extractor=FakeConceptExtractor().extract_concepts
+    )
+
+    result = service.extract_evidence(
+        "I have a headache."
+    )
+
+    assert result == [
+        {
+            "symptom": "headache",
+            "evidence": "I have a headache.",
+        },
+        {
+            "symptom": "fever",
+            "evidence": "I have a headache.",
+        },
+    ]
+

@@ -16,7 +16,26 @@ class FakeMedicalQAService:
             "top_k": top_k,
         }
 
+class FakeSymptomPipelineService:
+    """Test double for symptom extraction."""
 
+    def __init__(self):
+        self.called_with = []
+
+    def extract_symptoms(self, text: str) -> list[dict]:
+        self.called_with.append(text)
+        return [
+            {
+                "symptom": "headache",
+                "status": "present",
+                "temporality": "current",
+                "experiencer": "self",
+                "resolution_status": "unknown",
+                "duration": None,
+                "evidence": text,
+            }
+        ]
+    
 
 def make_test_database(path):
     conn = sqlite3.connect(path)
@@ -61,6 +80,8 @@ def test_graph_routes_question_to_medical_service():
         "top_k": 5,
         "medical_qa_service": FakeMedicalQAService(),
     })
+
+    assert result["intent"] == "medical_question"
 
     assert result["result"]["answer"] == (
         "Test answer for: What is hypertension?"
@@ -508,3 +529,42 @@ def test_triage_warns_when_symptoms_are_worsening():
     assert triage["requires_emergency_care"] is False
     assert "prompt medical assessment" in triage["message"]
 
+def test_triage_includes_extracted_symptoms():
+    symptom_service = FakeSymptomPipelineService()
+
+    result = build_healthcare_graph().invoke({
+        "question": "I have symptoms. My head has been pounding",
+        "symptom_pipeline_service": symptom_service,
+    })
+
+    triage = result["result"]
+
+    assert symptom_service.called_with == [
+        "I have symptoms. My head has been pounding"
+    ]
+    assert triage["summary"]["extracted_symptoms"] == [
+        {
+            "symptom": "headache",
+            "status": "present",
+            "temporality": "current",
+            "experiencer": "self",
+            "resolution_status": "unknown",
+            "duration": None,
+            "evidence": "I have symptoms. My head has been pounding",
+        }
+    ]
+
+def test_emergency_triage_skips_symptom_extraction():
+    symptom_service = FakeSymptomPipelineService()
+
+    result = build_healthcare_graph().invoke({
+        "question": "I have severe chest pain",
+        "symptom_pipeline_service": symptom_service,
+    })
+
+    triage = result["result"]
+    assert result["intent"] == "triage"
+
+    assert triage["urgency_level"] == "emergency"
+    assert triage["requires_emergency_care"] is True
+    assert symptom_service.called_with == []
