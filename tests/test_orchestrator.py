@@ -805,3 +805,68 @@ def test_clarification_agent_returns_structured_response():
     assert result["result"]["requires_human_review"] is True
     assert result["result"]["clarification_question"]
 
+
+def test_mother_with_trouble_breathing_triggers_emergency():
+    result = build_healthcare_graph().invoke({
+        "question": "My mother is having trouble breathing",
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is True
+
+
+def test_person_nearby_suddenly_collapsed_triggers_emergency():
+    result = build_healthcare_graph().invoke({
+        "question": "Someone near me has suddenly collapsed",
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is True
+
+
+def test_denied_chest_pain_does_not_trigger_emergency():
+    classifier = FakeIntentClassificationService({
+        "intent": "medical_question",
+        "subject": "self",
+        "temporality": "current",
+        "emergency_signal": False,
+        "confidence": 0.95,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "I do not have chest pain",
+        "medical_qa_service": FakeMedicalQAService(),
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+def test_historical_chest_pain_with_current_breathing_difficulty_triggers_emergency():
+    result = build_healthcare_graph().invoke({
+        "question": (
+            "I had chest pain yesterday, but now I cannot breathe"
+        ),
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is True
+
+
+def test_first_person_historical_chest_pain_routes_to_triage():
+    classifier = FakeIntentClassificationService({
+        "intent": "symptom_report",
+        "subject": "self",
+        "temporality": "historical",
+        "emergency_signal": False,
+        "confidence": 0.96,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "I had chest pain yesterday",
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is False
+

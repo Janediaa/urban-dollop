@@ -113,10 +113,11 @@ def classify_intent(state: HealthcareState) -> dict:
 
     # Detect clear first-person symptom reports.
     personal_patterns = (
-        r"\b(?:i have|i've had|i have had|i've been having|"
-        r"i am experiencing|i'm experiencing|"
-        r"i've been experiencing|i feel|i am feeling|"
-        r"i've been feeling)\b",
+        r"\b(?:i have|i've had|i have had|i had|"
+        r"i've been having|i am experiencing|"
+        r"i'm experiencing|i've been experiencing|"
+        r"i feel|i am feeling|i've been feeling)\b",
+
         r"\bmy\b.{1,60}\b(?:hurts?|aches?|aching|"
         r"pounding|throbbing|swollen|itchy|numb|tingling)\b",
     )
@@ -148,19 +149,20 @@ def classify_intent(state: HealthcareState) -> dict:
             else "self"
         )
 
-        # Clear current emergency reports bypass extraction.
-        emergency_terms = (
-            "chest pain",
-            "chest pressure",
-            "difficulty breathing",
-            "shortness of breath",
-            "can't breathe",
-            "cannot breathe",
-            "severe bleeding",
-            "unconscious",
-            "not breathing",
-            "face drooping",
-            "sudden weakness",
+                # Emergency symptoms, including common alternative expressions.
+        emergency_patterns = (
+            r"\bchest pain\b",
+            r"\bchest pressure\b",
+            r"\b(?:difficulty|trouble) breathing\b",
+            r"\bshortness of breath\b",
+            r"\b(?:can't|cannot) breathe\b",
+            r"\bsevere bleeding\b",
+            r"\bunconscious\b",
+            r"\bnot breathing\b",
+            r"\bface drooping\b",
+            r"\bsudden weakness\b",
+            r"\b(?:suddenly )?collapsed\b",
+            r"\bseizure\b",
         )
 
         historical_patterns = (
@@ -175,24 +177,92 @@ def classify_intent(state: HealthcareState) -> dict:
             r"\b(?:had|experienced)\b.{0,40}\bago\b",
         )
 
-        is_historical = any(
-            re.search(pattern, question)
-            for pattern in historical_patterns
+        current_patterns = (
+            r"\bnow\b",
+            r"\bright now\b",
+            r"\bcurrently\b",
+            r"\bat this moment\b",
+            r"\bis happening\b",
+            r"\bare happening\b",
+            r"\bstarted just now\b",
         )
 
-        emergency_signal = (
-            not is_historical
-            and any(term in question for term in emergency_terms)
-        )
+        emergency_signal = False
 
+        for pattern in emergency_patterns:
+            for match in re.finditer(pattern, question):
+                # Identify the clause containing this symptom.
+                # Commas, sentence punctuation, and "but" separate contexts.
+                boundaries_before = list(
+                    re.finditer(
+                        r"[,;.!?]|\bbut\b",
+                        question[:match.start()],
+                    )
+                )
+
+                clause_start = (
+                    boundaries_before[-1].end()
+                    if boundaries_before
+                    else 0
+                )
+
+                boundary_after = re.search(
+                    r"[,;.!?]|\bbut\b",
+                    question[match.end():],
+                )
+
+                clause_end = (
+                    match.end() + boundary_after.start()
+                    if boundary_after
+                    else len(question)
+                )
+
+                clause = question[clause_start:clause_end]
+
+                # Ignore explicitly denied symptoms.
+                preceding_text = question[clause_start:match.start()]
+
+                if re.search(
+                    r"\b(?:not|no|never|denies|without|"
+                    r"doesn't have|does not have|"
+                    r"don't have|do not have)\b",
+                    preceding_text,
+                ):
+                    continue
+
+                # Evaluate historical and current context within the clause.
+                historical_context = any(
+                    re.search(pattern, clause)
+                    for pattern in historical_patterns
+                )
+
+                current_context = any(
+                    re.search(pattern, clause)
+                    for pattern in current_patterns
+                )
+
+                # Historical symptoms are not automatically emergencies.
+                if historical_context and not current_context:
+                    continue
+
+                emergency_signal = True
+                break
+
+            if emergency_signal:
+                break
+                    # Emergency symptoms must bypass the LLM classifier.
         if emergency_signal:
             return {
                 "intent": "triage",
                 "subject": subject,
                 "temporality": "current",
                 "emergency_signal": True,
+                "extracted_symptoms": [],
             }
-
+        is_historical = any(
+            re.search(pattern, question)
+            for pattern in historical_patterns
+        )
         symptom_pipeline_service = state.get(
             "symptom_pipeline_service"
         )
@@ -228,7 +298,7 @@ def classify_intent(state: HealthcareState) -> dict:
                 "temporality": (
                     "historical" if is_historical else "current"
                 ),
-                "emergency_signal": False,
+                "emergency_signal": emergency_signal,
                 "extracted_symptoms": extracted_symptoms,
             }
 
