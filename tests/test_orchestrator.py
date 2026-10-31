@@ -7,6 +7,17 @@ from src.agents.orchestrator import build_healthcare_graph
 from src.database.models import create_tables
 
 
+class FakeIntentClassificationService:
+    """Test double for contextual intent classification."""
+
+    def __init__(self, classification):
+        self.classification = classification
+        self.called_with = []
+
+    def classify(self, question):
+        self.called_with.append(question)
+        return self.classification
+
 class FakeMedicalQAService:
     """Test double that avoids model loading and external API calls."""
 
@@ -605,4 +616,192 @@ def test_graph_keeps_general_symptom_question_in_medical_rag():
     )
     assert symptom_service.called_with == []
 
+def test_general_question_about_frequent_headaches_routes_to_medical_rag():
+    result = build_healthcare_graph().invoke({
+        "question": "What causes frequent headaches?",
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+def test_general_question_about_symptoms_routes_to_medical_rag():
+    result = build_healthcare_graph().invoke({
+        "question": "What are the symptoms of diabetes?",
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+def test_personal_fever_report_routes_to_triage():
+    result = build_healthcare_graph().invoke({
+        "question": "I have had a fever and cough",
+    })
+
+    assert result["intent"] == "triage"
+
+
+def test_personal_headache_report_routes_to_triage():
+    result = build_healthcare_graph().invoke({
+        "question": "I've been experiencing frequent headaches",
+    })
+
+    assert result["intent"] == "triage"
+
+
+def test_hypothetical_chest_pain_question_does_not_trigger_emergency_triage():
+    result = build_healthcare_graph().invoke({
+        "question": "What happens when someone experiences chest pain?",
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+
+def test_hypothetical_chest_pain_question_routes_to_medical_rag():
+    result = build_healthcare_graph().invoke({
+        "question": "What happens when someone experiences chest pain?",
+        "medical_qa_service": FakeMedicalQAService(),
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+def test_stroke_warning_signs_question_routes_to_medical_rag():
+    result = build_healthcare_graph().invoke({
+        "question": "What are the warning signs of a stroke?",
+        "medical_qa_service": FakeMedicalQAService(),
+    })
+
+    assert result["intent"] == "medical_question"
+
+
+def test_other_person_current_emergency_routes_to_emergency_triage():
+    result = build_healthcare_graph().invoke({
+        "question": "My father has chest pain",
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["urgency_level"] == "emergency"
+    assert result["result"]["requires_emergency_care"] is True
+
+
+def test_person_nearby_with_breathing_difficulty_routes_to_emergency():
+    result = build_healthcare_graph().invoke({
+        "question": "Someone near me is having difficulty breathing",
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is True
+
+
+def test_historical_chest_pain_is_not_automatically_emergency():
+    classifier = FakeIntentClassificationService({
+        "intent": "symptom_report",
+        "subject": "self",
+        "temporality": "historical",
+        "emergency_signal": False,
+        "confidence": 0.98,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "I had severe chest pain yesterday",
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "triage"
+    assert result["result"]["requires_emergency_care"] is False
+
+
+def test_ambiguous_other_person_symptom_uses_classifier():
+    classifier = FakeIntentClassificationService({
+        "intent": "symptom_report",
+        "subject": "other_person",
+        "temporality": "current",
+        "emergency_signal": False,
+        "confidence": 0.95,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "My mother has been experiencing dizziness",
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "triage"
+    assert result["subject"] == "other_person"
+    assert result["temporality"] == "current"
+    assert result["result"]["requires_emergency_care"] is False
+
+
+def test_ambiguous_general_question_uses_classifier():
+    classifier = FakeIntentClassificationService({
+        "intent": "medical_question",
+        "subject": "general",
+        "temporality": "unknown",
+        "emergency_signal": False,
+        "confidence": 0.97,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "Can recurring headaches have different causes?",
+        "medical_qa_service": FakeMedicalQAService(),
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "medical_question"
+    assert len(classifier.called_with) == 1
+
+
+def test_hypothetical_emergency_classification_is_not_accepted():
+    classifier = FakeIntentClassificationService({
+        "intent": "medical_question",
+        "subject": "hypothetical",
+        "temporality": "unknown",
+        "emergency_signal": False,
+        "confidence": 0.99,
+    })
+
+    result = build_healthcare_graph().invoke({
+        "question": "What should someone do if they have chest pain?",
+        "medical_qa_service": FakeMedicalQAService(),
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "medical_question"
+
+def test_classifier_failure_routes_to_clarification():
+    classifier = FakeIntentClassificationService(None)
+
+    result = build_healthcare_graph().invoke({
+        "question": "Something has been feeling unusual lately.",
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "needs_clarification"
+    assert result["result"]["intent"] == "needs_clarification"
+    assert "clarification_question" in result["result"]
+    assert len(classifier.called_with) == 1
+
+
+def test_clarification_does_not_trigger_emergency():
+    classifier = FakeIntentClassificationService(None)
+
+    result = build_healthcare_graph().invoke({
+        "question": "I have been feeling strange recently.",
+        "intent_classification_service": classifier,
+    })
+
+    assert result["intent"] == "needs_clarification"
+    assert result["result"].get("requires_emergency_care") is not True
+
+def test_clarification_agent_returns_structured_response():
+    from src.agents.orchestrator import clarification_agent
+
+    result = clarification_agent({
+        "question": "Something feels wrong.",
+        "intent": "needs_clarification",
+    })
+
+    assert result["result"]["intent"] == "needs_clarification"
+    assert result["result"]["requires_human_review"] is True
+    assert result["result"]["clarification_question"]
 

@@ -15,15 +15,14 @@ function App() {
   const [authUser, setAuthUser] = useState(null)
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [authToken, setAuthToken] = useState('')
-  const [authChecking, setAuthChecking] = useState(true)
+  const [authChecking, setAuthChecking] = useState(
+    () => Boolean(localStorage.getItem('healthcare_auth_token'))
+  )
 
   useEffect(() => {
     const savedToken = localStorage.getItem('healthcare_auth_token')
 
-    if (!savedToken) {
-      setAuthChecking(false)
-      return
-    }
+    if (!savedToken) return
 
     async function restoreSession() {
       try {
@@ -45,7 +44,6 @@ function App() {
         setAuthUser(user)
       } catch {
         // Keep the saved token if the server is temporarily unavailable.
-        // A later refresh can retry session restoration.
       } finally {
         setAuthChecking(false)
       }
@@ -721,67 +719,176 @@ function App() {
   }
 
   function renderOverview() {
-    return (
-      <>
-        <div className="welcome">
+  const firstName = authUser?.full_name?.split(' ')[0] || 'there'
+
+  const suggestedQuestions = [
+    'What are the common symptoms of diabetes?',
+    'How can I manage high blood pressure?',
+    'What causes frequent headaches?',
+  ]
+
+  return (
+    <div className="overview-page">
+      <section className="overview-welcome">
+        <div className="overview-welcome-copy">
           <span className="eyebrow">YOUR HEALTH, ONE PLACE</span>
-          <h2>How can we help you today?</h2>
-          <p>Medical information, doctor discovery and appointment management in one workspace.</p>
+          <h2>Good to see you, {firstName}.</h2>
+          <p>
+            Your healthcare journey, made simpler.
+            Explore medical information, find doctors and manage appointments
+            all in one place.
+          </p>
         </div>
 
-        <form className="quick-question" onSubmit={(event) => {
-          setActivePage('medical')
-          askMedicalQuestion(event)
-        }}>
-          <span className="question-icon">✳</span>
-          <input
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="Ask a health-related question..."
-            minLength={3}
-            required
-          />
-          <button type="submit" disabled={asking}>Ask AI ↗</button>
-        </form>
+        <div className="welcome-decoration" aria-hidden="true">
+          <div className="welcome-decoration-icon">H+</div>
+          <span>Healthcare<br />Navigator</span>
+        </div>
+      </section>
 
-        <div className="section-heading">
+      <section className="ai-assistant-card">
+        <div className="ai-assistant-heading">
+          <div className="ai-assistant-icon">✳</div>
           <div>
-            <span className="eyebrow">YOUR WORKSPACE</span>
-            <h3>Explore Healthcare Navigator</h3>
+            <span className="eyebrow">YOUR HEALTH ASSISTANT</span>
+            <h3>What would you like to know?</h3>
+            <p>
+              Ask a health-related question and explore information
+              from our medical knowledge base.
+            </p>
           </div>
         </div>
 
-        <div className="feature-grid">
-          <button className="feature-card" onClick={() => setActivePage('medical')}>
-            <span className="feature-icon mint">✳</span>
-            <span className="feature-title">Medical AI</span>
-            <span className="feature-description">Get evidence-informed answers from your medical knowledge base.</span>
-            <span className="feature-link">Ask a question ↗</span>
+        <form
+          className="quick-question"
+          onSubmit={(event) => {
+            setActivePage('medical')
+            askMedicalQuestion(event)
+          }}
+        >
+          <span className="question-icon" aria-hidden="true">✳</span>
+
+          <input
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="Describe your health-related question..."
+            minLength={3}
+            maxLength={2000}
+            required
+            aria-label="Ask a health-related question"
+          />
+
+          <button type="submit" disabled={asking || question.trim().length < 3}>
+            {asking ? 'Please wait...' : 'Ask Medical AI ↗'}
           </button>
-          <button className="feature-card" onClick={() => {
-            setActivePage('doctors')
-            searchDoctors()
-          }}>
-            <span className="feature-icon blue">⚕</span>
-            <span className="feature-title">Find a doctor</span>
-            <span className="feature-description">Search doctors by city and specialty, with experience and fee filters.</span>
-            <span className="feature-link">Explore doctors ↗</span>
-          </button>
-          <button className="feature-card" onClick={() => setActivePage('appointments')}>
-            <span className="feature-icon peach">▦</span>
-            <span className="feature-title">Appointments</span>
-            <span className="feature-description">Browse available slots and manage your application bookings.</span>
-            <span className="feature-link">Manage appointments ↗</span>
-          </button>
+        </form>
+
+        <div className="suggested-questions">
+          <span>TRY ASKING</span>
+          <div className="suggested-question-list">
+            {suggestedQuestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => setQuestion(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="overview-services">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">YOUR WORKSPACE</span>
+            <h3>Explore your healthcare services</h3>
+          </div>
+          <span className="section-caption">Everything you need, in one place</span>
         </div>
 
-        <div className="notice">
-          <strong>Important:</strong> Medical AI provides general health information, not a diagnosis.
-          For emergencies, seek immediate medical attention.
+        <div className="feature-grid">
+          <button
+            type="button"
+            className="feature-card service-card medical-service"
+            onClick={() => setActivePage('medical')}
+          >
+            <div className="service-card-top">
+              <span className="feature-icon mint">✳</span>
+              <span className="service-arrow">↗</span>
+            </div>
+
+            <span className="feature-title">Medical AI</span>
+
+            <span className="feature-description">
+              Explore evidence-informed medical information and get answers
+              to your health-related questions.
+            </span>
+
+            <span className="feature-link">Ask a question <span>→</span></span>
+          </button>
+
+          <button
+            type="button"
+            className="feature-card service-card doctor-service"
+            onClick={() => {
+              setActivePage('doctors')
+              searchDoctors()
+            }}
+          >
+            <div className="service-card-top">
+              <span className="feature-icon blue">⚕</span>
+              <span className="service-arrow">↗</span>
+            </div>
+
+            <span className="feature-title">Find a doctor</span>
+
+            <span className="feature-description">
+              Discover doctors by location and specialty. Compare their
+              experience and consultation fees.
+            </span>
+
+            <span className="feature-link">Explore doctors <span>→</span></span>
+          </button>
+
+          <button
+            type="button"
+            className="feature-card service-card appointment-service"
+            onClick={() => setActivePage('appointments')}
+          >
+            <div className="service-card-top">
+              <span className="feature-icon peach">▦</span>
+              <span className="service-arrow">↗</span>
+            </div>
+
+            <span className="feature-title">Appointments</span>
+
+            <span className="feature-description">
+              Browse available appointment slots, create booking proposals
+              and manage your bookings.
+            </span>
+
+            <span className="feature-link">Manage appointments <span>→</span></span>
+          </button>
         </div>
-      </>
-    )
-  }
+      </section>
+
+      <div className="notice overview-notice">
+        <span className="notice-icon">i</span>
+        <div>
+          <strong>Important health information</strong>
+          <p>
+            Medical AI provides general health information, not a medical
+            diagnosis. It does not replace consultation with a qualified
+            healthcare professional. For emergencies, seek immediate medical
+            attention.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
   function renderMedicalPage() {
     return (
@@ -1217,7 +1324,13 @@ function App() {
     appointments: 'Appointments',
     auth: 'Sign in',
   }
-
+  if (authChecking) {
+    return (
+      <div className="app-loading">
+        Restoring your session...
+      </div>
+    )
+  }
 
   return (
     <div className="app-shell">

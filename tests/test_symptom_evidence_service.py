@@ -122,3 +122,20 @@ def test_semantic_and_lexical_matches_are_deduplicated():
         },
     ]
 
+def test_contrastive_clauses_keep_symptoms_separate():
+    service = SymptomEvidenceService()
+
+    result = service.extract_evidence(
+        "I have skin irritation, but I do not have a rash."
+    )
+
+    assert result == [
+        {
+            "symptom": "skin irritation",
+            "evidence": "I have skin irritation",
+        },
+        {
+            "symptom": "rash",
+            "evidence": "I do not have a rash.",
+        },
+    ]

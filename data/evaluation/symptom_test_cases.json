@@ -1,0 +1,411 @@
+
+[
+  {
+    "id": "SYM001",
+    "text": "I have a high fever today.",
+    "expected_symptoms": ["fever"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM002",
+    "text": "I cannot stop coughing.",
+    "expected_symptoms": ["cough"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM003",
+    "text": "My nose is blocked and congested.",
+    "expected_symptoms": ["common cold"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM004",
+    "text": "My throat hurts when I swallow.",
+    "expected_symptoms": ["sore throat"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM005",
+    "text": "I feel exhausted even after resting.",
+    "expected_symptoms": ["fatigue"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM006",
+    "text": "I have developed red patches on my skin.",
+    "expected_symptoms": ["rash"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM007",
+    "text": "My skin keeps itching.",
+    "expected_symptoms": ["itchy skin"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM008",
+    "text": "My skin feels irritated and uncomfortable.",
+    "expected_symptoms": ["skin irritation"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM009",
+    "text": "My heart suddenly starts beating very fast.",
+    "expected_symptoms": ["palpitations"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM010",
+    "text": "My heartbeat feels uneven.",
+    "expected_symptoms": ["irregular heartbeat"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM011",
+    "text": "I have a severe headache.",
+    "expected_symptoms": ["headache"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM012",
+    "text": "I cannot feel part of my hand properly.",
+    "expected_symptoms": ["numbness"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM013",
+    "text": "I feel pins and needles in my fingers.",
+    "expected_symptoms": ["tingling"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM014",
+    "text": "I feel lightheaded when I stand up.",
+    "expected_symptoms": ["dizziness"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM015",
+    "text": "I feel like throwing up.",
+    "expected_symptoms": ["nausea"],
+    "category": "direct"
+  },
+  {
+    "id": "SYM016",
+    "text": "My body feels unusually hot.",
+    "expected_symptoms": ["fever"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM017",
+    "text": "I keep hacking throughout the day.",
+    "expected_symptoms": ["cough"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM018",
+    "text": "My nose keeps running.",
+    "expected_symptoms": ["common cold"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM019",
+    "text": "My throat feels scratchy and painful.",
+    "expected_symptoms": ["sore throat"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM020",
+    "text": "I have very little energy throughout the day.",
+    "expected_symptoms": ["fatigue"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM021",
+    "text": "There are unusual bumps and red marks on my skin.",
+    "expected_symptoms": ["rash"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM022",
+    "text": "I have an uncomfortable itching sensation.",
+    "expected_symptoms": ["itchy skin"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM023",
+    "text": "My skin has a burning and uncomfortable sensation.",
+    "expected_symptoms": ["skin irritation"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM024",
+    "text": "I can feel my heartbeat pounding in my chest.",
+    "expected_symptoms": ["palpitations"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM025",
+    "text": "It feels like my heart occasionally skips a beat.",
+    "expected_symptoms": ["irregular heartbeat"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM026",
+    "text": "My head has been pounding since yesterday.",
+    "expected_symptoms": ["headache"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM027",
+    "text": "There is a complete loss of sensation in my fingertips.",
+    "expected_symptoms": ["numbness"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM028",
+    "text": "I experience a prickling sensation in my feet.",
+    "expected_symptoms": ["tingling"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM029",
+    "text": "The room seems to spin whenever I stand.",
+    "expected_symptoms": ["dizziness"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM030",
+    "text": "My stomach feels unsettled and queasy.",
+    "expected_symptoms": ["nausea"],
+    "category": "paraphrase"
+  },
+  {
+    "id": "SYM031",
+    "text": "I have a fever and a persistent cough.",
+    "expected_symptoms": ["fever", "cough"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM032",
+    "text": "My head hurts and I feel nauseous.",
+    "expected_symptoms": ["headache", "nausea"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM033",
+    "text": "I have a runny nose, sneezing, and a sore throat.",
+    "expected_symptoms": ["common cold", "sore throat"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM034",
+    "text": "My skin is itchy and has developed red patches.",
+    "expected_symptoms": ["itchy skin", "rash"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM035",
+    "text": "My heart races and sometimes feels like it skips beats.",
+    "expected_symptoms": ["palpitations", "irregular heartbeat"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM036",
+    "text": "I feel exhausted and lightheaded.",
+    "expected_symptoms": ["dizziness", "fatigue"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM037",
+    "text": "My fingers feel numb and have a pins-and-needles sensation.",
+    "expected_symptoms": ["numbness", "tingling"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM038",
+    "text": "I have a cough, fever, and unusual tiredness.",
+    "expected_symptoms": ["cough", "fatigue", "fever"],
+    "category": "multiple_symptoms"
+  },
+  {
+    "id": "SYM039",
+    "text": "I have nausia and feel like vomiting.",
+    "expected_symptoms": ["nausea"],
+    "category": "typo"
+  },
+  {
+    "id": "SYM040",
+    "text": "My hed has been hurting all morning.",
+    "expected_symptoms": ["headache"],
+    "category": "typo"
+  },
+  {
+    "id": "SYM041",
+    "text": "I have a persistant cough.",
+    "expected_symptoms": ["cough"],
+    "category": "typo"
+  },
+  {
+    "id": "SYM042",
+    "text": "I have been feeling dizzzy since morning.",
+    "expected_symptoms": ["dizziness"],
+    "category": "typo"
+  },
+  {
+    "id": "SYM043",
+    "text": "My fingers have a tingeling sensation.",
+    "expected_symptoms": ["tingling"],
+    "category": "typo"
+  },
+  {
+    "id": "SYM044",
+    "text": "I don't have a fever.",
+    "expected_symptoms": ["fever"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM045",
+    "text": "I am not experiencing any headache.",
+    "expected_symptoms": ["headache"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM046",
+    "text": "There is no itching on my skin.",
+    "expected_symptoms": ["itchy skin"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM047",
+    "text": "I am not feeling nauseous.",
+    "expected_symptoms": ["nausea"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM048",
+    "text": "I do not have any tingling in my hands.",
+    "expected_symptoms": ["tingling"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM049",
+    "text": "I am not experiencing dizziness anymore.",
+    "expected_symptoms": ["dizziness"],
+    "category": "negation"
+  },
+  {
+    "id": "SYM050",
+    "text": "I had a fever last week.",
+    "expected_symptoms": ["fever"],
+    "category": "historical"
+  },
+  {
+    "id": "SYM051",
+    "text": "I experienced severe headaches last month.",
+    "expected_symptoms": ["headache"],
+    "category": "historical"
+  },
+  {
+    "id": "SYM052",
+    "text": "I used to experience frequent heart palpitations.",
+    "expected_symptoms": ["palpitations"],
+    "category": "historical"
+  },
+  {
+    "id": "SYM053",
+    "text": "I had a skin rash a few weeks ago.",
+    "expected_symptoms": ["rash"],
+    "category": "historical"
+  },
+  {
+    "id": "SYM054",
+    "text": "My mother has been experiencing dizziness.",
+    "expected_symptoms": ["dizziness"],
+    "category": "other_person"
+  },
+  {
+    "id": "SYM055",
+    "text": "My father has a persistent cough.",
+    "expected_symptoms": ["cough"],
+    "category": "other_person"
+  },
+  {
+    "id": "SYM056",
+    "text": "My sister complains of frequent headaches.",
+    "expected_symptoms": ["headache"],
+    "category": "other_person"
+  },
+  {
+    "id": "SYM057",
+    "text": "My friend says that their fingers feel numb.",
+    "expected_symptoms": ["numbness"],
+    "category": "other_person"
+  },
+  {
+    "id": "SYM058",
+    "text": "Why do people experience dizziness?",
+    "expected_symptoms": ["dizziness"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM059",
+    "text": "What causes numbness in the fingers?",
+    "expected_symptoms": ["numbness"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM060",
+    "text": "What is the difference between a fever and a common cold?",
+    "expected_symptoms": ["common cold", "fever"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM061",
+    "text": "Can palpitations occur without an irregular heartbeat?",
+    "expected_symptoms": ["irregular heartbeat", "palpitations"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM062",
+    "text": "What are the common causes of nausea?",
+    "expected_symptoms": ["nausea"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM063",
+    "text": "How does a skin rash develop?",
+    "expected_symptoms": ["rash"],
+    "category": "educational"
+  },
+  {
+    "id": "SYM064",
+    "text": "My laptop battery is draining quickly.",
+    "expected_symptoms": [],
+    "category": "unrelated"
+  },
+  {
+    "id": "SYM065",
+    "text": "I need help preparing for my university examination.",
+    "expected_symptoms": [],
+    "category": "unrelated"
+  },
+  {
+    "id": "SYM066",
+    "text": "The weather has been unusually hot today.",
+    "expected_symptoms": [],
+    "category": "unrelated"
+  },
+  {
+    "id": "SYM067",
+    "text": "My internet connection keeps disconnecting.",
+    "expected_symptoms": [],
+    "category": "unrelated"
+  },
+  {
+    "id": "SYM068",
+    "text": "I am planning a trip to Jaipur next month.",
+    "expected_symptoms": [],
+    "category": "unrelated"
+  }
+]

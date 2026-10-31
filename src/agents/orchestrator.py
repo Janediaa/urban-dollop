@@ -17,6 +17,10 @@ from src.services.appointment_service import (
 from src.services.insurance_service import assess_service_coverage
 from src.database.connection import get_connection
 
+from src.services.intent_classification_service import (
+    IntentClassificationService,
+)
+
 
 class HealthcareState(TypedDict, total=False):
     """State passed between nodes in a healthcare workflow."""
@@ -26,6 +30,11 @@ class HealthcareState(TypedDict, total=False):
     medical_qa_service: Any
     symptom_pipeline_service: Any
     extracted_symptoms: list[dict[str, Any]]
+    intent_classification_service: Any
+    subject: str
+    temporality: str
+    emergency_signal: bool
+    classification_confidence: float
     db_path: str
     intent: str
     result: dict[str, Any]
@@ -42,10 +51,12 @@ class HealthcareState(TypedDict, total=False):
     user_id: int
 
 
-def classify_intent(state: HealthcareState) -> dict:
-    """Classify a request using deterministic rules."""
 
-    question = state.get("question", "").strip().lower()
+def classify_intent(state: HealthcareState) -> dict:
+    """Classify requests using deterministic rules and contextual Gemini fallback."""
+
+    original_question = state.get("question", "").strip()
+    question = original_question.lower()
 
     if not question:
         return {
@@ -53,42 +64,7 @@ def classify_intent(state: HealthcareState) -> dict:
             "error": "Question must not be empty.",
         }
 
-    # Explicit symptom/urgency requests take priority over general Q&A.
-    triage_terms = (
-        "symptom",
-        "symptoms",
-        "chest pain",
-        "chest pressure",
-        "difficulty breathing",
-        "shortness of breath",
-        "can't breathe",
-        "cannot breathe",
-        "severe bleeding",
-        "unconscious",
-        "not breathing",
-        "signs of stroke",
-        "face drooping",
-        "sudden weakness",
-        "fever",
-        "cough",
-        "cold",
-        "sore throat",
-        "fatigue",
-        "rash",
-        "itchy skin",
-        "skin irritation",
-        "palpitations",
-        "heart racing",
-        "irregular heartbeat",
-        "frequent headaches",
-        "recurring headaches",
-        "numbness",
-        "tingling",
-    )
-
-    if any(term in question for term in triage_terms):
-        return {"intent": "triage"}
-
+    # Preserve existing non-medical workflow routing.
     if any(term in question for term in (
         "insurance", "coverage", "covered by my plan",
         "insurance plan", "health policy",
@@ -102,9 +78,7 @@ def classify_intent(state: HealthcareState) -> dict:
     )):
         return {"intent": "appointment"}
 
-    if any(term in question for term in (
-        "hospital", "hospitals",
-    )):
+    if any(term in question for term in ("hospital", "hospitals")):
         return {"intent": "hospital_search"}
 
     if any(term in question for term in (
@@ -115,36 +89,175 @@ def classify_intent(state: HealthcareState) -> dict:
     )):
         return {"intent": "doctor_search"}
 
-        # Only attempt semantic extraction when the user appears to
-    # be describing their own symptoms.
-    personal_symptom_patterns = (
-        r"\b(?:i feel|i am feeling|i've been feeling|"
-        r"i have been feeling|i am experiencing|"
-        r"i've been experiencing)\b",
+    # Clearly educational questions should not become symptom reports.
+    educational_patterns = (
+        r"^\s*what causes\b",
+        r"^\s*what are the symptoms\b",
+        r"^\s*what happens when\b",
+        r"^\s*why do people\b",
+        r"^\s*what are the warning signs\b",
+        r"^\s*what is\b",
+        r"^\s*how does\b",
+        r"^\s*how do\b",
+        r"^\s*what should someone do if\b",
+        r"^\s*what should i do if someone\b",
+    )
+
+    is_educational_question = any(
+        re.search(pattern, question)
+        for pattern in educational_patterns
+    )
+
+    if is_educational_question:
+        return {"intent": "medical_question"}
+
+    # Detect clear first-person symptom reports.
+    personal_patterns = (
+        r"\b(?:i have|i've had|i have had|i've been having|"
+        r"i am experiencing|i'm experiencing|"
+        r"i've been experiencing|i feel|i am feeling|"
+        r"i've been feeling)\b",
         r"\bmy\b.{1,60}\b(?:hurts?|aches?|aching|"
         r"pounding|throbbing|swollen|itchy|numb|tingling)\b",
     )
 
-    is_personal_symptom_report = any(
+    is_personal_report = any(
         re.search(pattern, question)
-        for pattern in personal_symptom_patterns
+        for pattern in personal_patterns
     )
 
-    if is_personal_symptom_report:
-        symptom_pipeline_service = state.get("symptom_pipeline_service")
+    # Detect reports involving another real person.
+    other_person_patterns = (
+        r"\bmy\s+(?:father|mother|dad|mom|"
+        r"brother|sister|husband|wife|"
+        r"son|daughter|friend|grandfather|"
+        r"grandmother|grandparent)\b",
+        r"\b(?:someone|somebody)\s+(?:near me|"
+        r"next to me|with me)\b",
+    )
+
+    is_other_person_report = any(
+        re.search(pattern, question)
+        for pattern in other_person_patterns
+    )
+
+    if is_personal_report or is_other_person_report:
+        subject = (
+            "other_person"
+            if is_other_person_report
+            else "self"
+        )
+
+        # Clear current emergency reports bypass extraction.
+        emergency_terms = (
+            "chest pain",
+            "chest pressure",
+            "difficulty breathing",
+            "shortness of breath",
+            "can't breathe",
+            "cannot breathe",
+            "severe bleeding",
+            "unconscious",
+            "not breathing",
+            "face drooping",
+            "sudden weakness",
+        )
+
+        historical_patterns = (
+            r"\byesterday\b",
+            r"\blast night\b",
+            r"\blast week\b",
+            r"\blast month\b",
+            r"\bpreviously\b",
+            r"\bin the past\b",
+            r"\bused to\b",
+            r"\bno longer\b",
+            r"\b(?:had|experienced)\b.{0,40}\bago\b",
+        )
+
+        is_historical = any(
+            re.search(pattern, question)
+            for pattern in historical_patterns
+        )
+
+        emergency_signal = (
+            not is_historical
+            and any(term in question for term in emergency_terms)
+        )
+
+        if emergency_signal:
+            return {
+                "intent": "triage",
+                "subject": subject,
+                "temporality": "current",
+                "emergency_signal": True,
+            }
+
+        symptom_pipeline_service = state.get(
+            "symptom_pipeline_service"
+        )
+
+        extracted_symptoms = []
 
         if symptom_pipeline_service is not None:
-            extracted_symptoms = symptom_pipeline_service.extract_symptoms(
-                state.get("question", "").strip()
+            extracted_symptoms = (
+                symptom_pipeline_service.extract_symptoms(
+                    original_question
+                )
             )
 
-            if extracted_symptoms:
-                return {
-                    "intent": "triage",
-                    "extracted_symptoms": extracted_symptoms,
-                }
+        known_symptoms = (
+            "fever", "cough", "cold", "sore throat",
+            "fatigue", "rash", "itchy skin",
+            "skin irritation", "palpitations",
+            "heart racing", "irregular heartbeat",
+            "frequent headaches", "recurring headaches",
+            "headache", "numbness", "tingling",
+            "dizziness", "chest pain",
+        )
 
-    return {"intent": "medical_question"}
+        has_known_symptom = any(
+            re.search(rf"\b{re.escape(symptom)}\b", question)
+            for symptom in known_symptoms
+        )
+
+        if extracted_symptoms or has_known_symptom:
+            return {
+                "intent": "triage",
+                "subject": subject,
+                "temporality": (
+                    "historical" if is_historical else "current"
+                ),
+                "emergency_signal": False,
+                "extracted_symptoms": extracted_symptoms,
+            }
+
+    # Ambiguous medical messages: use injected classifier or default service.
+    classifier = state.get("intent_classification_service")
+
+    if classifier is None:
+        classifier = IntentClassificationService()
+
+    classification = classifier.classify(original_question)
+
+    if classification is not None:
+        return {
+            "intent": (
+                "triage"
+                if classification["intent"] == "symptom_report"
+                else "medical_question"
+            ),
+            "subject": classification["subject"],
+            "temporality": classification["temporality"],
+            "emergency_signal": classification["emergency_signal"],
+            "classification_confidence": classification["confidence"],
+        }
+
+    # Do not guess when contextual classification fails.
+    return {
+        "intent": "needs_clarification",
+        "classification_confidence": 0.0,
+    }
 
 
 def medical_rag_agent(state: HealthcareState) -> dict:
@@ -520,7 +633,7 @@ def triage_agent(state: HealthcareState) -> dict:
         "sudden weakness",
     )
 
-    if any(term in question_lower for term in emergency_terms):
+    if state.get("emergency_signal", False):
         return {
             "result": {
                 "intent": "triage",
@@ -836,6 +949,24 @@ def insurance_agent(state: HealthcareState) -> dict:
         }
     }
 
+def clarification_agent(state: HealthcareState) -> dict:
+    """Ask the user to clarify an ambiguous medical message."""
+
+    return {
+        "result": {
+            "intent": "needs_clarification",
+            "message": (
+                "I couldn't confidently understand your message. "
+                "I want to make sure I guide you correctly."
+            ),
+            "clarification_question": (
+                "Are you describing symptoms that you or someone else "
+                "are currently experiencing, or are you asking a "
+                "general medical question?"
+            ),
+            "requires_human_review": True,
+        }
+    }
 
 
 def not_implemented_agent(state: HealthcareState) -> dict:
@@ -864,6 +995,7 @@ def build_healthcare_graph():
     graph.add_node("hospital_search_agent", hospital_search_agent)
     graph.add_node("triage_agent", triage_agent)
     graph.add_node("insurance_agent", insurance_agent)
+    graph.add_node("clarification_agent", clarification_agent)
 
     graph.add_edge(START, "classify_intent")
 
@@ -883,6 +1015,8 @@ def build_healthcare_graph():
             return "triage"
         if intent == "insurance":
             return "insurance"
+        if intent == "needs_clarification":
+            return "clarification"
         return "other"
 
     graph.add_conditional_edges(
@@ -895,6 +1029,7 @@ def build_healthcare_graph():
             "appointment": "appointment_agent",
             "triage": "triage_agent",
             "insurance": "insurance_agent",
+            "clarification": "clarification_agent",
             "other": "not_implemented_agent",
             "end": END,
         },
@@ -907,6 +1042,7 @@ def build_healthcare_graph():
     graph.add_edge("appointment_agent", END)
     graph.add_edge("triage_agent", END)
     graph.add_edge("insurance_agent", END)
+    graph.add_edge("clarification_agent", END)
     
 
     return graph.compile()
