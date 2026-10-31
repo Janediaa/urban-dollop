@@ -1,5 +1,117 @@
 import sqlite3
 
+def _migrate_appointments_allow_history(
+    conn: sqlite3.Connection,
+) -> None:
+    """Allow multiple historical appointments per slot, but only
+    one confirmed appointment per slot.
+    """
+    conn.commit()
+
+    foreign_keys_enabled = conn.execute(
+        "PRAGMA foreign_keys"
+    ).fetchone()[0]
+
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN IMMEDIATE")
+
+        indexes = conn.execute(
+            "PRAGMA index_list(appointments)"
+        ).fetchall()
+
+        has_unique_slot_constraint = False
+
+        for index in indexes:
+            index_name = index[1]
+            is_unique = index[2]
+            is_partial = index[4]
+
+            if not is_unique or is_partial:
+                continue
+
+            indexed_columns = [
+                row[2]
+                for row in conn.execute(
+                    f'PRAGMA index_info("{index_name}")'
+                ).fetchall()
+            ]
+
+            if indexed_columns == ["slot_id"]:
+                has_unique_slot_constraint = True
+                break
+
+        if has_unique_slot_constraint:
+            conn.execute("""
+                CREATE TABLE appointments_new (
+                    appointment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    booking_reference TEXT NOT NULL UNIQUE,
+                    slot_id INTEGER NOT NULL,
+                    patient_name TEXT NOT NULL,
+                    patient_contact TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'confirmed'
+                        CHECK (status IN ('confirmed', 'cancelled')),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    user_id INTEGER REFERENCES users(user_id),
+                    FOREIGN KEY (slot_id)
+                        REFERENCES appointment_slots(slot_id)
+                )
+            """)
+
+            conn.execute("""
+                INSERT INTO appointments_new (
+                    appointment_id,
+                    booking_reference,
+                    slot_id,
+                    patient_name,
+                    patient_contact,
+                    status,
+                    created_at,
+                    user_id
+                )
+                SELECT
+                    appointment_id,
+                    booking_reference,
+                    slot_id,
+                    patient_name,
+                    patient_contact,
+                    status,
+                    created_at,
+                    user_id
+                FROM appointments
+            """)
+
+            conn.execute("DROP TABLE appointments")
+            conn.execute(
+                "ALTER TABLE appointments_new RENAME TO appointments"
+            )
+
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_one_confirmed_appointment_per_slot
+            ON appointments(slot_id)
+            WHERE status = 'confirmed'
+        """)
+
+        violations = conn.execute(
+            "PRAGMA foreign_key_check"
+        ).fetchall()
+
+        if violations:
+            raise sqlite3.IntegrityError(
+                f"Foreign-key violations after appointment migration: "
+                f"{violations}"
+            )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        if foreign_keys_enabled:
+            conn.execute("PRAGMA foreign_keys = ON")
 
 def create_tables(conn : sqlite3.Connection) -> None:
     """
@@ -46,7 +158,7 @@ def create_tables(conn : sqlite3.Connection) -> None:
         )
     """)
 
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS appointment_slots (
             slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +177,7 @@ def create_tables(conn : sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS appointments (
             appointment_id INTEGER PRIMARY KEY AUTOINCREMENT,
             booking_reference TEXT NOT NULL UNIQUE,
-            slot_id INTEGER NOT NULL UNIQUE,
+            slot_id INTEGER NOT NULL,
             patient_name TEXT NOT NULL,
             patient_contact TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'confirmed'
@@ -75,7 +187,7 @@ def create_tables(conn : sqlite3.Connection) -> None:
                 REFERENCES appointment_slots (slot_id)
         )
     """)
-    
+
     # Store appointment booking proposals separately from confirmed bookings.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS booking_proposals (
@@ -138,4 +250,5 @@ def create_tables(conn : sqlite3.Connection) -> None:
                 """
             )
 
+    _migrate_appointments_allow_history(conn)
     conn.commit()

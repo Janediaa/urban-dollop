@@ -140,75 +140,35 @@ def book_appointment(
         if slot_datetime <= datetime.now():
             raise ValueError("Appointment slot must be in the future")
 
-        existing_cursor = conn.execute(
-            """
-            SELECT appointment_id, booking_reference, status
-            FROM appointments
-            WHERE slot_id = ?
-            """,
-            (slot_id,),
-        )
-        existing = existing_cursor.fetchone()
-
         if slot_status != "available":
             raise ValueError("Appointment slot is not available")
 
-        
-        if existing is not None:
-            appointment_id, booking_reference, booking_status = existing
+        booking_reference = str(uuid.uuid4()).upper()
 
-            if booking_status != "cancelled":
-                raise ValueError(
-                    "Appointment slot already has an active booking"
-                )
-
-            booking_reference = str(uuid.uuid4()).upper()
-
-            conn.execute(
-                """
-                UPDATE appointments
-                SET patient_name = ?,
-                    patient_contact = ?,
-                    status = 'confirmed',
-                    booking_reference = ?,
-                    created_at = CURRENT_TIMESTAMP,
-                    user_id = ?
-                WHERE appointment_id = ?
-                """,
-                (
-                    patient_name.strip(),
-                    patient_contact.strip(),
-                    booking_reference,
-                    user_id,
-                    appointment_id,
-                ),
+        cursor = conn.execute(
+            """
+            INSERT INTO appointments (
+                booking_reference,
+                slot_id,
+                patient_name,
+                patient_contact,
+                user_id
             )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                booking_reference,
+                slot_id,
+                patient_name.strip(),
+                patient_contact.strip(),
+                user_id,
+            ),
+        )
 
-        else:
-            booking_reference = str(uuid.uuid4()).upper()
+        appointment_id = cursor.lastrowid
 
-            cursor = conn.execute(
-                """
-                INSERT INTO appointments (
-                    booking_reference,
-                    slot_id,
-                    patient_name,
-                    patient_contact,
-                    user_id
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    booking_reference,
-                    slot_id,
-                    patient_name.strip(),
-                    patient_contact.strip(),
-                    user_id,
-                ),
-            )
-            appointment_id = cursor.lastrowid
 
-        
+
         slot_update = conn.execute(
             """
             UPDATE appointment_slots
@@ -240,7 +200,7 @@ def book_appointment(
             conn.rollback()
         raise
 
-    
+
 def get_appointment_by_reference(
     conn: sqlite3.Connection,
     booking_reference: str,

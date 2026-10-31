@@ -12,6 +12,10 @@ from src.services.appointment_service import (
     get_appointment_by_reference,
     get_available_slots,
 )
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+from src.database.connection import get_connection
 
 
 @pytest.fixture
@@ -213,3 +217,138 @@ def test_booking_rolls_back_when_slot_update_fails(conn, future_slot):
 
     assert appointment_count == 0
     assert slot_status == "available"
+
+
+
+def test_concurrent_booking_allows_only_one_patient(tmp_path):
+    db_path = tmp_path / "concurrent_booking.db"
+
+    # Initialize a real SQLite database.
+    setup_conn = get_connection(db_path)
+
+    try:
+        create_tables(setup_conn)
+
+        setup_conn.execute(
+            """
+            INSERT INTO hospitals (hospital_name, city)
+            VALUES ('Concurrency Hospital', 'Noida')
+            """
+        )
+
+        setup_conn.execute(
+            """
+            INSERT INTO doctors (
+                composite_doctor_id,
+                doctor_name,
+                doctor_type,
+                experience_years,
+                location,
+                fees,
+                city,
+                hospital_id
+            )
+            VALUES (
+                'CONC-001',
+                'Dr Concurrency',
+                'General Medicine',
+                5,
+                'Noida',
+                500,
+                'Noida',
+                1
+            )
+            """
+        )
+
+        doctor_id = setup_conn.execute(
+            """
+            SELECT doctor_id
+            FROM doctors
+            WHERE composite_doctor_id = 'CONC-001'
+            """
+        ).fetchone()[0]
+
+        future_date = (
+            date.today() + timedelta(days=30)
+        ).isoformat()
+
+        slot = create_appointment_slot(
+            setup_conn,
+            doctor_id,
+            future_date,
+            "10:30",
+        )
+
+        slot_id = slot["slot_id"]
+
+    finally:
+        setup_conn.close()
+
+    # Both workers start booking at approximately the same time.
+    barrier = Barrier(2)
+
+    def attempt_booking(patient_name):
+        conn = get_connection(db_path)
+
+        try:
+            barrier.wait(timeout=5)
+
+            try:
+                booking = book_appointment(
+                    conn,
+                    slot_id,
+                    patient_name,
+                    f"{patient_name.lower()}@test.com",
+                )
+
+                return ("booked", booking)
+
+            except ValueError as exc:
+                return ("rejected", str(exc))
+
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(attempt_booking, "Patient One"),
+            executor.submit(attempt_booking, "Patient Two"),
+        ]
+
+        results = [future.result(timeout=10) for future in futures]
+
+    # Exactly one booking must succeed.
+    assert sorted(result[0] for result in results) == [
+        "booked",
+        "rejected",
+    ]
+
+    # Verify the database after both connections have closed.
+    verify_conn = get_connection(db_path)
+
+    try:
+        appointments = verify_conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM appointments
+            WHERE slot_id = ? AND status = 'confirmed'
+            """,
+            (slot_id,),
+        ).fetchone()[0]
+
+        slot_status = verify_conn.execute(
+            """
+            SELECT status
+            FROM appointment_slots
+            WHERE slot_id = ?
+            """,
+            (slot_id,),
+        ).fetchone()[0]
+
+        assert appointments == 1
+        assert slot_status == "booked"
+
+    finally:
+        verify_conn.close()
+
