@@ -3,13 +3,16 @@ import sqlite3
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Literal
+from datetime import date, time as datetime_time
+import re
 
 import time
-import traceback
+import logging
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from src.services.login_rate_limiter import login_rate_limiter
 from src.database.models import create_tables
 
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -44,6 +47,7 @@ from src.services.auth_service import (
     create_access_token,
     decode_access_token,
     register_user,
+    validate_auth_config,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -51,11 +55,12 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DATABASE_PATH = PROJECT_ROOT / "data" / "healthcare.db"
 APP_ENV = os.getenv("APP_ENV", "production").strip().lower()
-
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database and shared AI resources at startup."""
+    validate_auth_config()
 
     conn = get_connection(DATABASE_PATH)
 
@@ -182,10 +187,45 @@ def get_optional_current_user(
         "email": user[2],
     }
 
+
 class AppointmentSlotRequest(BaseModel):
     doctor_id: int = Field(gt=0)
     appointment_date: str
     appointment_time: str
+
+    @field_validator("appointment_date")
+    @classmethod
+    def validate_appointment_date(cls, value: str) -> str:
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(
+                "appointment_date must use YYYY-MM-DD"
+            ) from exc
+
+        if parsed.isoformat() != value:
+            raise ValueError(
+                "appointment_date must use YYYY-MM-DD"
+            )
+
+        return value
+
+    @field_validator("appointment_time")
+    @classmethod
+    def validate_appointment_time(cls, value: str) -> str:
+        if not re.fullmatch(r"\d{2}:\d{2}(:\d{2})?", value):
+            raise ValueError(
+                "appointment_time must use HH:MM or HH:MM:SS"
+            )
+
+        try:
+            datetime_time.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError(
+                "Invalid appointment_time"
+            ) from exc
+
+        return value
 
 
 class MedicalQuestionRequest(BaseModel):
@@ -193,11 +233,49 @@ class MedicalQuestionRequest(BaseModel):
     top_k: int = Field(default=3, ge=1, le=10)
     triage_answers: dict[str, str] = Field(default_factory=dict)
 
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        value = value.strip()
+
+        if len(value) < 3:
+            raise ValueError("Question must contain at least 3 characters")
+
+        return value
+
+    @field_validator("triage_answers")
+    @classmethod
+    def validate_triage_answers(
+        cls,
+        value: dict[str, str],
+    ) -> dict[str, str]:
+        if len(value) > 30:
+            raise ValueError("Too many triage answers")
+
+        for key, answer in value.items():
+            if not key.strip() or len(key) > 100:
+                raise ValueError("Invalid triage answer key")
+
+            if len(answer) > 500:
+                raise ValueError("Triage answer is too long")
+
+        return value
+
 
 class AppointmentBookingRequest(BaseModel):
     slot_id: int = Field(gt=0)
     patient_name: str = Field(min_length=1, max_length=100)
     patient_contact: str = Field(min_length=1, max_length=30)
+
+    @field_validator("patient_name", "patient_contact")
+    @classmethod
+    def validate_patient_details(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Field must not be empty")
+
+        return value
 
 
 class BookingProposalRequest(BaseModel):
@@ -205,21 +283,50 @@ class BookingProposalRequest(BaseModel):
     patient_name: str = Field(min_length=1, max_length=100)
     patient_contact: str = Field(min_length=1, max_length=30)
 
+    @field_validator("patient_name", "patient_contact")
+    @classmethod
+    def validate_patient_details(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Field must not be empty")
+
+        return value
+
 
 class BookingConfirmationRequest(BaseModel):
     proposal_id: str = Field(min_length=1, max_length=100)
 
+    @field_validator("proposal_id")
+    @classmethod
+    def validate_proposal_id(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("proposal_id must not be empty")
+
+        return value
+
 
 class UserRegistrationRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=100)
-    email: str = Field(min_length=3, max_length=254)
+    email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Full name must not be empty")
+
+        return value
 
 
 class UserLoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=254)
+    email: EmailStr
     password: str = Field(min_length=1, max_length=128)
-
 
 
 @app.get("/health", tags=["Health"])
@@ -247,13 +354,28 @@ def register_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-
 @app.post("/auth/login", tags=["Authentication"])
 def login_endpoint(
     request: UserLoginRequest,
+    http_request: Request,
     conn: sqlite3.Connection = Depends(get_db),
 ):
     """Authenticate a patient and return a bearer access token."""
+
+    client_id = (
+        http_request.client.host
+        if http_request.client is not None
+        else "unknown"
+    )
+
+    retry_after = login_rate_limiter.retry_after(client_id)
+
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     user = authenticate_user(
         conn,
@@ -262,17 +384,24 @@ def login_endpoint(
     )
 
     if user is None:
+        login_rate_limiter.record_failure(client_id)
+
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    access_token = create_access_token(user["user_id"])
+
+    login_rate_limiter.clear(client_id)
+
     return {
-        "access_token": create_access_token(user["user_id"]),
+        "access_token": access_token,
         "token_type": "bearer",
         "user": user,
     }
+
 
 @app.get("/auth/me", tags=["Authentication"])
 def get_logged_in_user(
@@ -474,6 +603,7 @@ def ask_medical_question(
     current_user: dict | None = Depends(get_optional_current_user),
 ):
     """Answer a health-information question and measure processing time."""
+
     question = request.question.strip()
 
     if not question:
@@ -485,7 +615,8 @@ def ask_medical_question(
     start_time = time.perf_counter()
 
     try:
-        print(f"\n[Medical AI] Question received: {question[:100]}")
+        # Never log the patient's question or triage answers.
+        logger.info("Medical request received.")
 
         graph = app.state.healthcare_graph
 
@@ -502,7 +633,7 @@ def ask_medical_question(
         )
 
         if "error" in graph_result:
-            error_message = graph_result["error"]
+            error_message = str(graph_result["error"])
 
             if "authenticated user is required" in error_message.lower():
                 raise HTTPException(
@@ -511,15 +642,21 @@ def ask_medical_question(
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
+            logger.warning("Medical graph returned an unsuccessful result.")
+
             raise HTTPException(
                 status_code=422,
-                detail=error_message,
+                detail="Unable to process the request with the supplied information.",
             )
 
         result = graph_result["result"]
 
         elapsed = time.perf_counter() - start_time
-        print(f"[Medical AI] Total processing time: {elapsed:.2f} seconds")
+
+        logger.info(
+            "Medical request completed in %.2f seconds.",
+            elapsed,
+        )
 
         return result
 
@@ -528,10 +665,13 @@ def ask_medical_question(
 
     except Exception:
         elapsed = time.perf_counter() - start_time
-        print(f"[Medical AI] Failed after {elapsed:.2f} seconds")
-        traceback.print_exc()
+
+        logger.exception(
+            "Medical answer generation failed after %.2f seconds.",
+            elapsed,
+        )
 
         raise HTTPException(
             status_code=502,
-            detail="Medical answer generation failed. Check backend logs.",
+            detail="Medical answer generation failed.",
         ) from None

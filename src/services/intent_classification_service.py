@@ -72,12 +72,20 @@ Rules:
 
 Return ONLY valid JSON with exactly these fields:
 {{
-  "intent": "medical_question or symptom_report",
-  "subject": "self, other_person, hypothetical, or general",
-  "temporality": "current, historical, future, or unknown",
-  "emergency_signal": true,
-  "confidence": 0.0
+  "intent": "medical_question",
+  "subject": "general",
+  "temporality": "unknown",
+  "emergency_signal": false,
+  "confidence": 0.95
 }}
+
+The values above are examples, not fixed values.
+Choose the appropriate values based on the message.
+
+emergency_signal must be a boolean:
+- true only for a current emergency symptom report involving a real person.
+- false for general, educational, hypothetical, historical,
+  or non-emergency messages.
 
 The confidence field is a classification confidence score, NOT a
 medical risk score.

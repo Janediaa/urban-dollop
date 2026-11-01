@@ -1,13 +1,12 @@
 
 import { useEffect, useState } from 'react'
 import './App.css'
+import AppLayout from './components/layout/AppLayout'
 
-const navItems = [
-  { id: 'overview', label: 'Overview', icon: '⌂' },
-  { id: 'medical', label: 'Medical AI', icon: '✳' },
-  { id: 'doctors', label: 'Find doctors', icon: '⚕' },
-  { id: 'appointments', label: 'Appointments', icon: '▦' },
-]
+import './styles/medical-page.css'
+import ReactMarkdown from 'react-markdown'
+import './styles/doctors-page.css'
+import './styles/appointments-page.css'
 
 function App() {
   const [activePage, setActivePage] = useState('overview')
@@ -690,33 +689,70 @@ function App() {
     )
   }
 
-
   function renderMedicalAnswer() {
-    if (!answer || answer.intent === 'triage') return null
+  if (!answer) return null
 
+  // The triage workflow has its own UI.
+  if (answer.intent === 'triage') return null
 
-    const sources = Array.isArray(answer.sources) ? answer.sources : []
-
+  // Handle ambiguous questions explicitly.
+  if (answer.intent === 'needs_clarification') {
     return (
-      <div className="answer-card">
-        <h3>Answer</h3>
-        <p className="answer-text">
-          {answer.answer || 'No answer was returned.'}
-        </p>
-        {sources.length > 0 && (
-          <div className="sources">
-            <h4>Sources</h4>
-            {sources.map((source, index) => (
-              <div className="source-item" key={source.source || source.filename || index}>
-                <span className="source-number">[{index + 1}]</span>
-                <span>{source.title || source.source || source.filename || JSON.stringify(source)}</span>
-              </div>
-            ))}
+      <section className="answer-card clarification-card">
+        <div className="clarification-heading">
+          <span className="clarification-icon">?</span>
+          <div>
+            <h3>Let's clarify your question</h3>
+            <p>{answer.message}</p>
           </div>
+        </div>
+
+        <div className="clarification-question">
+          <strong>{answer.clarification_question}</strong>
+        </div>
+
+        {answer.requires_human_review && (
+          <p className="clarification-note">
+            If you're describing current symptoms, please provide more
+            context so we can guide you appropriately. Seek professional
+            medical care when needed.
+          </p>
         )}
-      </div>
+      </section>
     )
   }
+
+  const sources = Array.isArray(answer.sources) ? answer.sources : []
+
+  return (
+    <section className="answer-card">
+      <h3>Answer</h3>
+
+      <p className="answer-text">
+        {answer.answer || answer.message || 'No answer was returned.'}
+      </p>
+
+      {sources.length > 0 && (
+        <div className="sources">
+          <h4>Sources</h4>
+
+          {sources.map((source, index) => (
+            <div
+              className="source-item"
+              key={source.source || source.filename || index}
+            >
+              <span className="source-number">[{index + 1}]</span>
+              <span>
+                {source.title || source.source || source.filename || 'Medical reference'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 
   function renderOverview() {
   const firstName = authUser?.full_name?.split(' ')[0] || 'there'
@@ -892,14 +928,14 @@ function App() {
 
   function renderMedicalPage() {
     return (
-      <>
+      <div className="medical-page">
         <div className="page-intro">
           <span className="eyebrow">MEDICAL KNOWLEDGE ASSISTANT</span>
           <h2>Ask Medical AI</h2>
           <p>Ask a health-information question. Answers are generated using your medical knowledge base and may not replace professional advice.</p>
         </div>
         
-        <section className="emergency-help" aria-labelledby="emergency-help-title">
+        <section className="emergency-help medical-emergency" aria-labelledby="emergency-help-title">
           <div className="emergency-help-icon" aria-hidden="true">
             <span>!</span>
           </div>
@@ -925,7 +961,7 @@ function App() {
           </a>
         </section>
 
-        <form className="panel question-form" onSubmit={askMedicalQuestion}>
+        <form className="panel question-form medical-composer" onSubmit={askMedicalQuestion}>
           <label htmlFor="question">What would you like to know?</label>
           <textarea
             id="question"
@@ -950,7 +986,7 @@ function App() {
         {renderMedicalAnswer()}
 
         {answer?.intent === 'triage' && answer?.summary && (
-          <section className="panel">
+          <section className="panel medical-summary-card">
             <h3>Pre-consultation summary</h3>
 
             {answer.requires_emergency_care ? (
@@ -1090,240 +1126,536 @@ function App() {
           </section>
         )}
 
-      </>
+      </div>
     )
   }
 
-  function renderDoctorsPage() {
-    return (
-      <>
-        <div className="page-intro">
-          <span className="eyebrow">HEALTHCARE DIRECTORY</span>
-          <h2>Find the right doctor</h2>
-          <p>Search the doctors available in the Healthcare Navigator database.</p>
+  
+function renderDoctorsPage() {
+  return (
+    <div className="doctors-page">
+      <section className="doctors-intro">
+        <span className="eyebrow">HEALTHCARE DIRECTORY</span>
+        <h2>Find the right doctor</h2>
+        <p>
+          Discover healthcare professionals by location and specialty.
+          Compare experience and consultation fees to make an informed choice.
+        </p>
+      </section>
+
+      <section className="doctor-search-panel">
+        <div className="doctor-search-heading">
+          <div className="doctor-search-icon">⌕</div>
+          <div>
+            <h3>Find a healthcare professional</h3>
+            <p>Refine your search using the filters below.</p>
+          </div>
         </div>
 
-        <form className="panel filter-form" onSubmit={searchDoctors}>
-          <div className="field">
+        <form className="doctor-search-form" onSubmit={searchDoctors}>
+          <div className="doctor-search-field">
             <label htmlFor="city">City</label>
-            <input id="city" value={city} onChange={(event) => setCity(event.target.value)} placeholder="e.g. delhi" />
+            <input
+              id="city"
+              value={city}
+              onChange={(event) => setCity(event.target.value)}
+              placeholder="e.g. Delhi"
+            />
           </div>
-          <div className="field">
+
+          <div className="doctor-search-field">
             <label htmlFor="specialty">Specialty</label>
-            <input id="specialty" value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder="e.g. cardiologist" />
+            <input
+              id="specialty"
+              value={specialty}
+              onChange={(event) => setSpecialty(event.target.value)}
+              placeholder="e.g. Cardiologist"
+            />
           </div>
-          <div className="field">
+
+          <div className="doctor-search-field">
             <label htmlFor="sort">Sort results by</label>
-            <select id="sort" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <select
+              id="sort"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+            >
               <option value="name">Name</option>
               <option value="experience">Experience</option>
               <option value="fees">Consultation fees</option>
             </select>
           </div>
+
           <button type="submit" disabled={searchingDoctors}>
             {searchingDoctors ? 'Searching…' : 'Search doctors'}
           </button>
         </form>
+      </section>
 
-        {doctorError && <div className="error-box">{doctorError}</div>}
-        {doctorCount !== null && (
-          <div className="results-heading">
-            <h3>Search results</h3>
-            <span>{doctorCount} doctors found</span>
+      {doctorError && (
+        <div className="error-box doctor-error" role="alert">
+          {doctorError}
+        </div>
+      )}
+
+      {doctorCount !== null && (
+        <section className="doctor-results-section">
+          <div className="doctor-results-heading">
+            <div>
+              <span className="eyebrow">YOUR SEARCH</span>
+              <h3>Available doctors</h3>
+            </div>
+            <span className="doctor-count">
+              {doctorCount} {doctorCount === 1 ? 'doctor' : 'doctors'} found
+            </span>
           </div>
-        )}
 
-        <div className="doctor-grid">
-          {doctors.map((doctor, index) => (
-            <article className="doctor-card" key={doctor.composite_doctor_id || doctor.doctor_id || index}>
-              <div className="doctor-avatar">{(doctor.doctor_name || 'D').slice(0, 1).toUpperCase()}</div>
-              <div className="doctor-main">
-                <h3>{doctor.doctor_name || 'Doctor'}</h3>
-                <p>{doctor.doctor_type || 'Medical professional'}</p>
-              </div>
-              <div className="doctor-details">
-                <span>Location</span><strong>{doctor.city || doctor.location || 'Not listed'}</strong>
-                <span>Experience</span><strong>{doctor.experience_years ?? '—'} years</strong>
-                <span>Fees</span><strong>{doctor.fees == null ? 'Not listed' : `₹${doctor.fees}`}</strong>
-              </div>
-              <button className="secondary-button" onClick={() => {
-                setDoctorId(String(doctor.doctor_id || ''))
-                setActivePage('appointments')
-              }}>Book appointment</button>
-            </article>
-          ))}
-        </div>
-        {doctorCount === 0 && <div className="empty-state">No doctors matched those filters. Try a different city or specialty.</div>}
-      </>
-    )
-  }
+          {doctorCount === 0 ? (
+            <div className="doctor-empty-state">
+              <div className="doctor-empty-icon">⌕</div>
+              <h3>No doctors found</h3>
+              <p>
+                We couldn't find doctors matching those filters.
+                Try another city or specialty.
+              </p>
+            </div>
+          ) : (
+            <div className="doctor-results-grid">
+              {doctors.map((doctor, index) => (
+                <article
+                  className="doctor-result-card"
+                  key={
+                    doctor.composite_doctor_id ||
+                    doctor.doctor_id ||
+                    index
+                  }
+                >
+                  <div className="doctor-card-top">
+                    <div className="doctor-profile">
+                      <div className="doctor-result-avatar">
+                        {(doctor.doctor_name || 'D')
+                          .slice(0, 1)
+                          .toUpperCase()}
+                      </div>
 
-  function renderAppointmentsPage() {
-    return (
-      <>
-        <div className="page-intro">
-          <span className="eyebrow">CARE COORDINATION</span>
-          <h2>Appointments</h2>
-          <p>Manage application-level appointment slots. These are not live hospital schedules.</p>
+                      <div className="doctor-result-identity">
+                        <h3>{doctor.doctor_name || 'Doctor'}</h3>
+                        <span>
+                          {doctor.doctor_type || 'Medical professional'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="doctor-specialty-tag">
+                      {doctor.doctor_type || 'General'}
+                    </span>
+                  </div>
+
+                  <div className="doctor-card-details">
+                    <div className="doctor-detail-item">
+                      <span>Location</span>
+                      <strong>
+                        {doctor.city || doctor.location || 'Not listed'}
+                      </strong>
+                    </div>
+
+                    <div className="doctor-detail-item">
+                      <span>Experience</span>
+                      <strong>
+                        {doctor.experience_years ?? '—'} years
+                      </strong>
+                    </div>
+
+                    <div className="doctor-detail-item doctor-fee-item">
+                      <span>Consultation fee</span>
+                      <strong>
+                        {doctor.fees == null
+                          ? 'Not listed'
+                          : `₹${doctor.fees}`}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <button
+                    className="doctor-book-button"
+                    onClick={() => {
+                      setDoctorId(String(doctor.doctor_id || ''))
+                      setActivePage('appointments')
+                    }}
+                  >
+                    Book appointment <span aria-hidden="true">→</span>
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  )
+}
+
+
+function renderAppointmentsPage() {
+  return (
+    <div className="appointments-page">
+      <section className="appointments-intro">
+        <span className="eyebrow">CARE COORDINATION</span>
+        <h2>Your appointments, made simpler.</h2>
+        <p>
+          Find available slots, request appointments and keep track of
+          your existing bookings in one place.
+        </p>
+      </section>
+
+      <div className="appointment-disclaimer">
+        <span className="appointment-disclaimer-icon">i</span>
+        <div>
+          <strong>About appointment availability</strong>
+          <p>
+            These are application-level appointment slots, not live
+            hospital schedules. Confirm availability with the healthcare
+            provider before attending.
+          </p>
         </div>
-        {!authUser && (
-          <div className="notice">
-            Please sign in to create bookings, look up appointments, or cancel them.
+      </div>
+
+      {!authUser && (
+        <section className="appointment-auth-card">
+          <div className="appointment-auth-icon">♧</div>
+          <div>
+            <h3>Sign in to manage your appointments</h3>
+            <p>
+              Access booking proposals, confirm appointments and
+              manage existing bookings securely.
+            </p>
             <button
               type="button"
-              className="secondary-button"
+              className="appointment-primary-button"
               onClick={() => {
                 setAuthMode('login')
                 setActivePage('auth')
               }}
             >
-              Sign in
+              Sign in to continue →
             </button>
           </div>
-        )}
-        {authUser && <div className="two-column">
-          <section className="panel">
-            <h3>Find available slots</h3>
-            <form onSubmit={loadSlots} className="stack-form">
-              <div className="field">
-                <label htmlFor="doctorId">Doctor ID</label>
-                <input id="doctorId" type="number" min="1" value={doctorId} onChange={(event) => setDoctorId(event.target.value)} required />
-              </div>
-              <div className="field">
-                <label htmlFor="appointmentDate">Date</label>
-                <input id="appointmentDate" type="date" value={appointmentDate} onChange={(event) => setAppointmentDate(event.target.value)} required />
-              </div>
-              <button type="submit">Find slots</button>
-            </form>
+        </section>
+      )}
 
-            <form onSubmit={createSlot} className="stack-form create-slot-form">
-              <h4>Development: create a slot</h4>
-              <div className="field">
-                <label htmlFor="appointmentTime">Time</label>
-                <input id="appointmentTime" type="time" value={appointmentTime} onChange={(event) => setAppointmentTime(event.target.value)} required />
+      {authUser && (
+        <>
+          <div className="appointments-workspace">
+            <section className="appointment-panel appointment-search-panel">
+              <div className="appointment-section-heading">
+                <div className="appointment-section-icon appointment-blue">
+                  <span>⌕</span>
+                </div>
+                <div>
+                  <span className="eyebrow">STEP 01</span>
+                  <h3>Find available slots</h3>
+                  <p>Choose a doctor and your preferred appointment date.</p>
+                </div>
               </div>
-              <button type="submit" className="secondary-button">Create slot</button>
-            </form>
 
+              <form onSubmit={loadSlots} className="appointment-form">
+                <div className="appointment-field">
+                  <label htmlFor="doctorId">Doctor ID</label>
+                  <input
+                    id="doctorId"
+                    type="number"
+                    min="1"
+                    value={doctorId}
+                    onChange={(event) => setDoctorId(event.target.value)}
+                    placeholder="Enter doctor ID"
+                    required
+                  />
+                </div>
 
-            {slotError && <div className="inline-message">{slotError}</div>}
-            {slots.length > 0 && (
-              <div className="slot-list">
-                <h4>Available slots</h4>
-                {slots.map((slot) => (
-                  <label className={`slot-option ${selectedSlot === String(slot.slot_id) ? 'selected' : ''}`} key={slot.slot_id}>
+                <div className="appointment-field">
+                  <label htmlFor="appointmentDate">Appointment date</label>
+                  <input
+                    id="appointmentDate"
+                    type="date"
+                    value={appointmentDate}
+                    onChange={(event) => setAppointmentDate(event.target.value)}
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="appointment-primary-button">
+                  Find available slots →
+                </button>
+              </form>
+
+              {slotError && (
+                <div className="appointment-inline-error" role="alert">
+                  {slotError}
+                </div>
+              )}
+
+              {slots.length > 0 && (
+                <div className="appointment-slots">
+                  <div className="appointment-slots-heading">
+                    <h4>Available time slots</h4>
+                    <span>{slots.length} found</span>
+                  </div>
+
+                  <div className="appointment-slot-list">
+                    {slots.map((slot) => (
+                      <label
+                        className={`appointment-slot-option ${
+                          selectedSlot === String(slot.slot_id) ? 'selected' : ''
+                        }`}
+                        key={slot.slot_id}
+                      >
+                        <input
+                          type="radio"
+                          name="slot"
+                          value={slot.slot_id}
+                          checked={selectedSlot === String(slot.slot_id)}
+                          onChange={() => setSelectedSlot(String(slot.slot_id))}
+                        />
+                        <span className="appointment-slot-time">
+                          {slot.appointment_time}
+                        </span>
+                        <span className="appointment-slot-date">
+                          {slot.appointment_date}
+                        </span>
+                        <span className="appointment-slot-status">
+                          Available
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <details className="appointment-development-tools">
+                <summary>Development tools · Create a test slot</summary>
+                <p>
+                  This is an administrative development feature, not a
+                  patient-facing hospital scheduling function.
+                </p>
+
+                <form onSubmit={createSlot} className="appointment-form">
+                  <div className="appointment-field">
+                    <label htmlFor="appointmentTime">Slot time</label>
                     <input
-                      type="radio"
-                      name="slot"
-                      value={slot.slot_id}
-                      checked={selectedSlot === String(slot.slot_id)}
-                      onChange={() => setSelectedSlot(String(slot.slot_id))}
+                      id="appointmentTime"
+                      type="time"
+                      value={appointmentTime}
+                      onChange={(event) => setAppointmentTime(event.target.value)}
+                      required
                     />
-                    <span>{slot.appointment_date} · {slot.appointment_time}</span>
-                    <span className="slot-available">Available</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </section>
+                  </div>
 
-          <section className="panel">
-            <h3>Book your appointment</h3>
-            <form onSubmit={bookAppointment} className="stack-form">
-              <div className="field">
-                <label htmlFor="selectedSlot">Selected slot ID</label>
-                <input id="selectedSlot" type="number" min="1" value={selectedSlot} onChange={(event) => setSelectedSlot(event.target.value)} required />
+                  <button
+                    type="submit"
+                    className="appointment-secondary-button"
+                  >
+                    Create test slot
+                  </button>
+                </form>
+              </details>
+            </section>
+
+            <section className="appointment-panel appointment-booking-panel">
+              <div className="appointment-section-heading">
+                <div className="appointment-section-icon appointment-mint">
+                  <span>✓</span>
+                </div>
+                <div>
+                  <span className="eyebrow">STEP 02</span>
+                  <h3>Request an appointment</h3>
+                  <p>Enter patient details to create a booking proposal.</p>
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="patientName">Patient name</label>
-                <input id="patientName" value={patientName} onChange={(event) => setPatientName(event.target.value)} maxLength={100} required />
+
+              <form onSubmit={bookAppointment} className="appointment-form">
+                <div className="appointment-field">
+                  <label htmlFor="selectedSlot">Selected slot ID</label>
+                  <input
+                    id="selectedSlot"
+                    type="number"
+                    min="1"
+                    value={selectedSlot}
+                    onChange={(event) => setSelectedSlot(event.target.value)}
+                    placeholder="Select a slot above"
+                    required
+                  />
+                </div>
+
+                <div className="appointment-field">
+                  <label htmlFor="patientName">Patient name</label>
+                  <input
+                    id="patientName"
+                    value={patientName}
+                    onChange={(event) => setPatientName(event.target.value)}
+                    maxLength={100}
+                    placeholder="Enter patient's full name"
+                    required
+                  />
+                </div>
+
+                <div className="appointment-field">
+                  <label htmlFor="patientContact">Contact details</label>
+                  <input
+                    id="patientContact"
+                    value={patientContact}
+                    onChange={(event) => setPatientContact(event.target.value)}
+                    maxLength={30}
+                    placeholder="Phone number or email"
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="appointment-primary-button">
+                  Create booking proposal →
+                </button>
+              </form>
+
+              {booking && (
+                <div className="appointment-result-card">
+                  <div className="appointment-result-heading">
+                    <span className="appointment-result-icon">✓</span>
+                    <div>
+                      <h4>Booking response</h4>
+                      <p>Your latest booking request response.</p>
+                    </div>
+                  </div>
+
+                  {booking.status && (
+                    <div className="appointment-result-status">
+                      <span>Status</span>
+                      <strong>
+                        {String(booking.status).replaceAll('_', ' ')}
+                      </strong>
+                    </div>
+                  )}
+
+                  {(booking.booking_reference || booking.reference) && (
+                    <div className="appointment-reference">
+                      <span>Booking reference</span>
+                      <strong>
+                        {booking.booking_reference || booking.reference}
+                      </strong>
+                      <button
+                        type="button"
+                        className="appointment-text-button"
+                        onClick={() =>
+                          setBookingReference(
+                            booking.booking_reference || booking.reference
+                          )
+                        }
+                      >
+                        Use for lookup →
+                      </button>
+                    </div>
+                  )}
+
+                  {booking.status === 'proposal_created' && (
+                    <button
+                      type="button"
+                      className="appointment-primary-button"
+                      onClick={confirmBookingProposal}
+                    >
+                      Explicitly confirm appointment →
+                    </button>
+                  )}
+
+                  <details className="appointment-response-details">
+                    <summary>View complete booking response</summary>
+                    <pre>{JSON.stringify(booking, null, 2)}</pre>
+                  </details>
+                </div>
+              )}
+            </section>
+          </div>
+
+          <section className="appointment-panel appointment-lookup-panel">
+            <div className="appointment-section-heading">
+              <div className="appointment-section-icon appointment-lavender">
+                <span>⌕</span>
               </div>
-              <div className="field">
-                <label htmlFor="patientContact">Contact details</label>
-                <input id="patientContact" value={patientContact} onChange={(event) => setPatientContact(event.target.value)} maxLength={30} placeholder="Phone or email" required />
+              <div>
+                <span className="eyebrow">BOOKING MANAGEMENT</span>
+                <h3>Manage an existing booking</h3>
+                <p>Retrieve your booking details using its reference.</p>
               </div>
-              <button type="submit">
-                Create booking proposal
+            </div>
+
+            <form
+              className="appointment-lookup-form"
+              onSubmit={lookUpAppointment}
+            >
+              <div className="appointment-field">
+                <label htmlFor="bookingReference">Booking reference</label>
+                <input
+                  id="bookingReference"
+                  value={bookingReference}
+                  onChange={(event) => setBookingReference(event.target.value)}
+                  placeholder="Enter your booking reference"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="appointment-secondary-button"
+              >
+                Look up booking →
               </button>
             </form>
 
-
-            {booking && (
-              <div className="success-box">
-                <h4>Booking response</h4>
-
-                <pre>{JSON.stringify(booking, null, 2)}</pre>
-
-                {booking.status === 'proposal_created' && (
-                  <button
-                    type="button"
-                    onClick={confirmBookingProposal}
-                  >
-                    Explicitly confirm appointment
-                  </button>
-                )}
-
-                {(booking.booking_reference || booking.reference) && (
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() =>
-                      setBookingReference(
-                        booking.booking_reference || booking.reference
-                      )
-                    }
-                  >
-                    Use reference for lookup
-                  </button>
-                )}
-              </div>
-            )}
-
-            <form className="stack-form lookup-form" onSubmit={lookUpAppointment}>
-              <h4>Find an existing booking</h4>
-              <div className="field">
-                <label htmlFor="bookingReference">Booking reference</label>
-                <input id="bookingReference" value={bookingReference} onChange={(event) => setBookingReference(event.target.value)} required />
-              </div>
-              <button type="submit" className="secondary-button">Look up booking</button>
-            </form>
-
-
             {lookupResult && (
-              <div className="success-box">
-                <h4>Booking details</h4>
+              <div className="appointment-result-card appointment-lookup-result">
+                <div className="appointment-result-heading">
+                  <span className="appointment-result-icon">✓</span>
+                  <div>
+                    <h4>Booking details</h4>
+                    <p>Retrieved booking information.</p>
+                  </div>
+                </div>
 
-                <pre>{JSON.stringify(lookupResult, null, 2)}</pre>
+                <div className="appointment-result-status">
+                  <span>Current status</span>
+                  <strong>
+                    {String(lookupResult.status || 'Unknown').replaceAll('_', ' ')}
+                  </strong>
+                </div>
 
                 {String(lookupResult.status || '').toLowerCase() === 'confirmed' && (
                   <button
                     type="button"
-                    className="secondary-button"
+                    className="appointment-danger-button"
                     onClick={cancelExistingAppointment}
                   >
                     Cancel appointment
                   </button>
                 )}
+
+                <details className="appointment-response-details">
+                  <summary>View complete booking details</summary>
+                  <pre>{JSON.stringify(lookupResult, null, 2)}</pre>
+                </details>
               </div>
             )}
-
-            {bookingError && (
-              <div className="error-box">{bookingError}</div>
-            )}
           </section>
-        </div>
-        }
-      </>
-    )
-  }
 
-  const pageTitles = {
-    overview: 'Overview',
-    medical: 'Medical AI',
-    doctors: 'Find doctors',
-    appointments: 'Appointments',
-    auth: 'Sign in',
-  }
+          {bookingError && (
+            <div className="error-box appointment-global-error" role="alert">
+              {bookingError}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+
+
   if (authChecking) {
     return (
       <div className="app-loading">
@@ -1332,81 +1664,21 @@ function App() {
     )
   }
 
+  
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">H+</span>
-          <div>
-            <strong>Healthcare</strong>
-            <span>Navigator</span>
-          </div>
-        </div>
-
-        <div className="workspace-label">WORKSPACE</div>
-
-        <nav className="nav-list">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-item ${activePage === item.id ? 'active' : ''}`}
-              onClick={() => setActivePage(item.id)}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <div className="status-dot" />
-          <div>
-            <strong>API connected</strong>
-            <span>Local development</span>
-          </div>
-        </div>
-      </aside>
-
-      <main className="main-area">
-        <header className="topbar">
-          <div>
-            <span className="breadcrumb">Healthcare Navigator /</span>
-            <strong>{pageTitles[activePage]}</strong>
-          </div>
-
-          <div className="topbar-actions">
-            {authUser ? (
-              <>
-                <span>Signed in as {authUser.full_name}</span>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={logOut}
-                >
-                  Sign out
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  setAuthMode('login')
-                  setAuthError('')
-                  setAuthMessage('')
-                  setActivePage('auth')
-                }}
-              >
-                Sign in
-              </button>
-            )}
-
-            <span className="environment-pill">
-              <span /> DEVELOPMENT
-            </span>
-          </div>
-        </header>
-
+    <>
+      <AppLayout
+        activePage={activePage}
+        setActivePage={setActivePage}
+        authUser={authUser}
+        onSignIn={() => {
+          setAuthMode('login')
+          setAuthError('')
+          setAuthMessage('')
+          setActivePage('auth')
+        }}
+        onLogout={logOut}
+      >
         <div className="page-content">
           {activePage === 'overview' && renderOverview()}
           {activePage === 'medical' && renderMedicalPage()}
@@ -1418,7 +1690,7 @@ function App() {
         <footer className="footer">
           Healthcare Navigator · Prototype · For informational use only
         </footer>
-      </main>
+      </AppLayout>
 
       {showLogoutModal && (
         <div className="logout-modal-overlay">
@@ -1454,8 +1726,9 @@ function App() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
+
 }
 
 export default App

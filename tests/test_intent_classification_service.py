@@ -223,3 +223,16 @@ def test_general_medical_question_classification_is_valid():
 
     assert result["intent"] == "medical_question"
     assert result["subject"] == "general"
+
+def test_general_question_can_have_no_emergency_signal():
+    result = IntentClassificationService._validate({
+        "intent": "medical_question",
+        "subject": "general",
+        "temporality": "unknown",
+        "emergency_signal": False,
+        "confidence": 0.95,
+    })
+
+    assert result["intent"] == "medical_question"
+    assert result["emergency_signal"] is False
+

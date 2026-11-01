@@ -1,0 +1,71 @@
+
+:root {
+  /* Brand */
+  --color-primary: #16866f;
+  --color-primary-dark: #116b59;
+  --color-primary-light: #e4f5ee;
+  --color-primary-soft: #f0faf5;
+
+  /* Accent colors */
+  --color-lavender: #eeeaff;
+  --color-lavender-dark: #7966c8;
+  --color-blue: #e9f2ff;
+  --color-blue-dark: #477fca;
+  --color-peach: #fff0e6;
+  --color-peach-dark: #c17a4d;
+
+  /* Backgrounds */
+  --color-background: #f5f8f7;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f8fbf9;
+
+  /* Text */
+  --color-text: #243630;
+  --color-text-secondary: #71847c;
+  --color-text-muted: #9aa9a2;
+
+  /* Status */
+  --color-success: #27966b;
+  --color-success-bg: #e9f7ef;
+  --color-warning: #c58b35;
+  --color-warning-bg: #fff6e5;
+  --color-danger: #c64f49;
+  --color-danger-bg: #fff0ee;
+  --color-info: #477fca;
+  --color-info-bg: #eaf2ff;
+
+  /* Borders and shadows */
+  --color-border: #e5ede8;
+  --color-border-strong: #d5e4dc;
+
+  --shadow-card: 0 4px 18px rgba(35, 75, 57, 0.045);
+  --shadow-card-hover: 0 14px 32px rgba(35, 75, 57, 0.09);
+  --shadow-floating: 0 18px 50px rgba(35, 75, 57, 0.12);
+
+  /* Radius */
+  --radius-sm: 9px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 26px;
+  --radius-pill: 999px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Typography */
+  --font-body: 'DM Sans', sans-serif;
+  --font-heading: 'Manrope', sans-serif;
+
+  /* Animation */
+  --transition-fast: 150ms ease;
+  --transition-normal: 220ms ease;
+  --transition-slow: 350ms ease;
+}

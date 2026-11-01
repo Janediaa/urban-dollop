@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
-
+import src.services.auth_service as auth_service
 from src.database.models import create_tables
 from src.services.auth_service import (
     register_user,
@@ -108,3 +108,72 @@ def test_expired_token_is_rejected():
 def test_invalid_token_is_rejected():
     with pytest.raises(jwt.InvalidTokenError):
         decode_access_token("this-is-not-a-valid-token")
+
+def test_create_access_token_fails_without_secret(monkeypatch):
+    monkeypatch.setattr(auth_service, "JWT_SECRET_KEY", None)
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        auth_service.create_access_token(1)
+
+
+def test_decode_access_token_fails_without_secret(monkeypatch):
+    monkeypatch.setattr(auth_service, "JWT_SECRET_KEY", None)
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        auth_service.decode_access_token("some-token")
+
+
+def test_token_with_invalid_user_id_is_rejected():
+    from src.services.auth_service import JWT_ALGORITHM, JWT_SECRET_KEY
+
+    token = jwt.encode(
+        {"sub": "not-a-number"},
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM,
+    )
+
+    with pytest.raises(jwt.InvalidTokenError):
+        decode_access_token(token)
+
+
+def test_token_signed_with_wrong_secret_is_rejected():
+    token = jwt.encode(
+        {"sub": "1"},
+        "completely-different-secret-key-32-bytes-minimum",
+        algorithm="HS256",
+    )
+
+    with pytest.raises(jwt.InvalidTokenError):
+        decode_access_token(token)
+
+def test_validate_auth_config_accepts_strong_secret(monkeypatch):
+    monkeypatch.setattr(
+        auth_service,
+        "JWT_SECRET_KEY",
+        "a" * 64,
+    )
+
+    auth_service.validate_auth_config()
+
+
+def test_validate_auth_config_rejects_missing_secret(monkeypatch):
+    monkeypatch.setattr(
+        auth_service,
+        "JWT_SECRET_KEY",
+        None,
+    )
+
+    with pytest.raises(RuntimeError, match="not configured"):
+        auth_service.validate_auth_config()
+
+
+def test_validate_auth_config_rejects_weak_secret(monkeypatch):
+    monkeypatch.setattr(
+        auth_service,
+        "JWT_SECRET_KEY",
+        "short-secret",
+    )
+
+    with pytest.raises(RuntimeError, match="32 bytes"):
+        auth_service.validate_auth_config()
+

@@ -1,11 +1,11 @@
-
 import sqlite3
+import pytest
 
 from datetime import date, timedelta
 
 from src.agents.orchestrator import build_healthcare_graph
 from src.database.models import create_tables
-
+from src.agents.orchestrator import classify_intent
 
 class FakeIntentClassificationService:
     """Test double for contextual intent classification."""
@@ -870,3 +870,20 @@ def test_first_person_historical_chest_pain_routes_to_triage():
     assert result["intent"] == "triage"
     assert result["result"]["requires_emergency_care"] is False
 
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "How can I manage high blood pressure?",
+        "What are the symptoms of diabetes?",
+        "What causes frequent headaches?",
+        "What is hypertension?",
+        "How can someone prevent diabetes?",
+        "How does blood pressure affect the body?",
+    ],
+)
+def test_general_medical_questions_do_not_trigger_clarification(question):
+    result = classify_intent({"question": question})
+
+    assert result["intent"] == "medical_question"

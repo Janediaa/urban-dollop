@@ -5,6 +5,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import secrets
 
 import jwt
 from dotenv import load_dotenv
@@ -20,7 +21,22 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 password_hasher = PasswordHash.recommended()
 
+# Used to perform password verification even when an email does not exist.
+DUMMY_PASSWORD_HASH = password_hasher.hash(
+    secrets.token_urlsafe(32)
+)
 
+def validate_auth_config() -> None:
+    """Validate authentication configuration before application startup."""
+
+    if not JWT_SECRET_KEY:
+        raise RuntimeError("JWT_SECRET_KEY is not configured")
+
+    if len(JWT_SECRET_KEY.encode("utf-8")) < 32:
+        raise RuntimeError(
+            "JWT_SECRET_KEY must contain at least 32 bytes"
+        )
+    
 def register_user(
     conn: sqlite3.Connection,
     full_name: str,
@@ -66,13 +82,12 @@ def register_user(
         "email": email,
     }
 
-
 def authenticate_user(
     conn: sqlite3.Connection,
     email: str,
     password: str,
 ) -> dict | None:
-    """Verify login credentials; return public user information on success."""
+    """Verify login credentials without exposing whether an email exists."""
 
     user = conn.execute(
         """
@@ -83,7 +98,16 @@ def authenticate_user(
         (email.strip().lower(),),
     ).fetchone()
 
-    if user is None or not password_hasher.verify(password, user[3]):
+    password_hash = (
+        user[3] if user is not None else DUMMY_PASSWORD_HASH
+    )
+
+    password_valid = password_hasher.verify(
+        password,
+        password_hash,
+    )
+
+    if user is None or not password_valid:
         return None
 
     return {
@@ -91,7 +115,6 @@ def authenticate_user(
         "full_name": user[1],
         "email": user[2],
     }
-
 
 def create_access_token(user_id: int) -> str:
     """Create a signed JWT that expires after 24 hours."""

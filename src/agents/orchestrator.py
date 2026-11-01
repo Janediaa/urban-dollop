@@ -99,6 +99,11 @@ def classify_intent(state: HealthcareState) -> dict:
         r"^\s*what is\b",
         r"^\s*how does\b",
         r"^\s*how do\b",
+        r"^\s*how can\b",
+        r"^\s*how should\b",
+        r"^\s*how to\b",
+        r"^\s*can you explain\b",
+        r"^\s*explain\b",
         r"^\s*what should someone do if\b",
         r"^\s*what should i do if someone\b",
     )

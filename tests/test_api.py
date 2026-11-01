@@ -3,10 +3,10 @@ import sqlite3
 from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
-
+from uuid import uuid4
 import src.api.app as api
 from src.database.models import create_tables
-
+from src.services.login_rate_limiter import login_rate_limiter
 
 def setup_test_database(path):
     conn = sqlite3.connect(path)
@@ -592,4 +592,277 @@ def test_user_cannot_access_another_users_insurance_policy(
 
     finally:
         api.app.dependency_overrides.pop(api.get_db, None)
+
+def test_registration_rejects_invalid_email():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/auth/register",
+            json={
+                "full_name": "Test Patient",
+                "email": "not-an-email",
+                "password": "securepass123",
+            },
+        )
+
+    assert response.status_code == 422
+
+def test_login_endpoint_returns_429_after_five_failed_attempts():
+    client_id = "testclient"
+    login_rate_limiter.clear(client_id)
+
+    try:
+        with TestClient(api.app) as client:
+            for attempt in range(5):
+                response = client.post(
+                    "/auth/login",
+                    json={
+                        "email": "unknown@example.com",
+                        "password": "wrongpassword123",
+                    },
+                )
+                assert response.status_code == 401, (
+                    f"Attempt {attempt + 1} unexpectedly returned "
+                    f"{response.status_code}"
+                )
+
+            response = client.post(
+                "/auth/login",
+                json={
+                    "email": "unknown@example.com",
+                    "password": "wrongpassword123",
+                },
+            )
+
+            assert response.status_code == 429
+            assert "Retry-After" in response.headers
+
+    finally:
+        login_rate_limiter.clear(client_id)
+
+
+def test_successful_login_resets_failed_attempts():
+    client_id = "testclient"
+    test_email = f"rate-limit-{uuid4().hex}@example.com"
+
+    login_rate_limiter.clear(client_id)
+
+    try:
+        with TestClient(api.app) as client:
+            registration = client.post(
+                "/auth/register",
+                json={
+                    "full_name": "Rate Limit Test",
+                    "email": test_email,
+                    "password": "securepass123",
+                },
+            )
+
+            assert registration.status_code == 201, registration.text
+
+            # Four failed attempts should not exhaust the limit.
+            for _ in range(4):
+                response = client.post(
+                    "/auth/login",
+                    json={
+                        "email": test_email,
+                        "password": "incorrectpassword",
+                    },
+                )
+                assert response.status_code == 401
+
+            # Successful login clears the counter.
+            response = client.post(
+                "/auth/login",
+                json={
+                    "email": test_email,
+                    "password": "securepass123",
+                },
+            )
+
+            assert response.status_code == 200
+            assert "access_token" in response.json()
+
+            # Five new failed attempts should be allowed.
+            for _ in range(5):
+                response = client.post(
+                    "/auth/login",
+                    json={
+                        "email": test_email,
+                        "password": "incorrectpassword",
+                    },
+                )
+                assert response.status_code == 401
+
+            # Sixth request should be throttled.
+            response = client.post(
+                "/auth/login",
+                json={
+                    "email": test_email,
+                    "password": "incorrectpassword",
+                },
+            )
+
+            assert response.status_code == 429
+
+    finally:
+        login_rate_limiter.clear(client_id)
+
+def test_slot_creation_rejects_invalid_date_format():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/appointments/slots",
+            json={
+                "doctor_id": 1,
+                "appointment_date": "15-12-2030",
+                "appointment_time": "10:00",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_slot_creation_rejects_invalid_time_format():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/appointments/slots",
+            json={
+                "doctor_id": 1,
+                "appointment_date": "2030-12-15",
+                "appointment_time": "25:90",
+            },
+        )
+
+    assert response.status_code == 422
+
+def test_booking_proposal_rejects_whitespace_patient_name():
+    with TestClient(api.app) as client:
+        headers = _register_and_login_for_validation_test(client)
+
+        response = client.post(
+            "/appointments/proposals",
+            headers=headers,
+            json={
+                "slot_id": 1,
+                "patient_name": "   ",
+                "patient_contact": "test-contact",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_booking_proposal_rejects_whitespace_contact():
+    with TestClient(api.app) as client:
+        headers = _register_and_login_for_validation_test(client)
+
+        response = client.post(
+            "/appointments/proposals",
+            headers=headers,
+            json={
+                "slot_id": 1,
+                "patient_name": "Test Patient",
+                "patient_contact": "   ",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+
+def _register_and_login_for_validation_test(client):
+    email = f"validation-{uuid4().hex}@example.com"
+
+    registration = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Validation Test",
+            "email": email,
+            "password": "securepass123",
+        },
+    )
+    assert registration.status_code == 201, registration.text
+
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": email,
+            "password": "securepass123",
+        },
+    )
+    assert login.status_code == 200, login.text
+
+    return {
+        "Authorization": f"Bearer {login.json()['access_token']}"
+    }
+
+
+def test_medical_question_rejects_whitespace_only_input():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/medical/ask",
+            json={"question": "   "},
+        )
+
+    assert response.status_code == 422
+
+
+def test_medical_question_rejects_excessive_triage_answers():
+    with TestClient(api.app) as client:
+        response = client.post(
+            "/medical/ask",
+            json={
+                "question": "Explain hypertension",
+                "triage_answers": {
+                    f"question_{index}": "answer"
+                    for index in range(31)
+                },
+            },
+        )
+
+    assert response.status_code == 422
+
+def test_medical_graph_error_does_not_expose_internal_message(monkeypatch):
+    class FakeGraph:
+        def invoke(self, state):
+            return {"error": "Internal database path leaked"}
+
+    with TestClient(api.app) as client:
+        monkeypatch.setattr(
+            api.app.state,
+            "healthcare_graph",
+            FakeGraph(),
+        )
+
+        response = client.post(
+            "/medical/ask",
+            json={"question": "Explain hypertension"},
+        )
+
+    assert response.status_code == 422
+    assert "Internal database path leaked" not in response.text
+    assert response.json()["detail"] == (
+        "Unable to process the request with the supplied information."
+    )
+
+
+def test_medical_graph_exception_returns_generic_error(monkeypatch):
+    class FakeGraph:
+        def invoke(self, state):
+            raise RuntimeError("Sensitive internal exception")
+
+    with TestClient(api.app) as client:
+        monkeypatch.setattr(
+            api.app.state,
+            "healthcare_graph",
+            FakeGraph(),
+        )
+
+        response = client.post(
+            "/medical/ask",
+            json={"question": "Explain hypertension"},
+        )
+
+    assert response.status_code == 502
+    assert "Sensitive internal exception" not in response.text
+    assert response.json()["detail"] == "Medical answer generation failed."
 

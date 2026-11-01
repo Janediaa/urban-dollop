@@ -1,0 +1,417 @@
+
+.app-sidebar {
+  width: 264px;
+  min-width: 264px;
+  min-height: 100vh;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 27px 18px 18px;
+  background: #ffffff;
+  border-right: 1px solid var(--color-border);
+  z-index: 20;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 9px;
+  margin-bottom: 32px;
+}
+
+.brand-symbol {
+  width: 43px;
+  height: 43px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: linear-gradient(145deg, #20a486, #11735e);
+  border-radius: 14px;
+  box-shadow: 0 5px 12px rgba(22, 134, 111, 0.2);
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.brand-copy strong {
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--color-text);
+}
+
+.brand-copy span {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.2px;
+}
+
+.sidebar-patient-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 12px;
+  margin-bottom: 34px;
+  background: linear-gradient(120deg, #e8f7f0, #f0f8f5);
+  border: 1px solid #e0f0e7;
+  border-radius: 16px;
+}
+
+.patient-card-icon {
+  width: 37px;
+  height: 37px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #16866f;
+  background: #ffffff;
+  border-radius: 12px;
+}
+
+.patient-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.patient-card-copy span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #679486;
+}
+
+.patient-card-copy strong {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  color: #285d4c;
+}
+
+.patient-card-shield {
+  color: #48a485;
+}
+
+.sidebar-navigation {
+  flex: 1;
+}
+
+.navigation-group {
+  margin-bottom: 26px;
+}
+
+.navigation-label {
+  display: block;
+  padding: 0 12px;
+  margin-bottom: 12px;
+  color: #9aa9a2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+}
+
+.navigation-group nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sidebar-nav-item {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 13px;
+  color: #71847c;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.sidebar-nav-item:hover {
+  color: var(--color-primary-dark);
+  background: #f1f8f4;
+  transform: translateX(2px);
+}
+
+.sidebar-nav-item.active {
+  color: #14765f;
+  background: #eaf6f0;
+  border-color: #e0f0e7;
+  font-weight: 700;
+}
+
+.sidebar-nav-item.active svg {
+  color: #16866f;
+}
+
+.nav-chevron {
+  margin-left: auto;
+}
+
+.app-sidebar__bottom {
+  margin-top: auto;
+}
+
+.sidebar-help-card {
+  padding: 17px 15px;
+  margin-bottom: 17px;
+  background: linear-gradient(145deg, #f1edff, #f8f5ff);
+  border: 1px solid #ebe5ff;
+  border-radius: 16px;
+}
+
+.help-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  color: #7966c8;
+  background: #ffffff;
+  border-radius: 11px;
+}
+
+.sidebar-help-card > strong {
+  display: block;
+  color: #443a73;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sidebar-help-card p {
+  margin: 7px 0 12px;
+  color: #8279a3;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.sidebar-help-card button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  color: #7966c8;
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sidebar-help-card button:hover {
+  color: #5543a3;
+}
+
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 5px 3px;
+  border-top: 1px solid var(--color-border);
+}
+
+.account-avatar {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #477fca;
+  background: #e9f2ff;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.account-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.account-copy strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-copy span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.account-login {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border: 0;
+  border-radius: 10px;
+}
+
+.account-login:hover {
+  background: #d5eee3;
+}
+
+
+/* Mobile slide-out navigation */
+
+.mobile-menu-toggle {
+  display: none;
+}
+
+.mobile-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(290px, 85vw);
+    min-width: 0;
+    height: 100dvh;
+    min-height: 0;
+    padding: 24px 18px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-right: 1px solid var(--color-border);
+    box-shadow: 12px 0 40px rgba(20, 50, 38, 0.12);
+    z-index: 80;
+    transform: translateX(-105%);
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    overflow-y: auto;
+  }
+
+  .app-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .mobile-menu-toggle {
+    position: fixed;
+    top: 15px;
+    left: 14px;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    color: var(--color-primary-dark);
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    z-index: 100;
+  }
+
+  .mobile-menu-toggle:hover {
+    background: var(--color-primary-light);
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    background: rgba(20, 39, 32, 0.38);
+    border: 0;
+    z-index: 70;
+    animation: backdrop-appear 180ms ease;
+  }
+
+  .sidebar-brand {
+    margin-bottom: 30px;
+  }
+
+  .sidebar-patient-card {
+    margin-bottom: 30px;
+  }
+
+  .sidebar-navigation {
+    flex: 1;
+  }
+
+  .navigation-label {
+    display: block;
+  }
+
+  .navigation-group nav {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .sidebar-nav-item {
+    min-height: 46px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 13px;
+    padding: 0 13px;
+    font-size: 13px;
+  }
+
+  .sidebar-nav-item:hover {
+    transform: none;
+  }
+
+  .nav-chevron {
+    display: block;
+    margin-left: auto;
+  }
+
+  .app-sidebar__bottom {
+    display: block;
+    margin-top: auto;
+  }
+
+  .sidebar-help-card {
+    display: block;
+  }
+
+  .sidebar-account {
+    display: flex;
+  }
+}
+
+@keyframes backdrop-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar {
+    transition: none;
+  }
+
+  .mobile-sidebar-backdrop {
+    animation: none;
+  }
+}
+
